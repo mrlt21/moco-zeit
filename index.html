@@ -5,111 +5,155 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Moco Zeiterfassung</title>
 <style>
-  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2e38; --txt:#e6e8ee; --muted:#9aa3b2;
-          --ok:#3fb950; --warn:#d29922; --dup:#58a6ff; --err:#f85149; --accent:#6e7bf2; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--txt);
-         font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:16px 20px; border-bottom:1px solid var(--line);
-           display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  h1 { font-size:17px; margin:0; font-weight:600; }
-  h2 { font-size:14px; margin:0 0 10px; }
-  .health { font-size:12px; color:var(--muted); }
-  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; margin-left:4px; }
-  .pill.ok { background:rgba(63,185,80,.15); color:var(--ok); }
-  .pill.bad { background:rgba(248,81,73,.15); color:var(--err); }
-  .spacer { flex:1; }
-  main { padding:20px; max-width:1180px; margin:0 auto; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
-  .drop { border:2px dashed var(--line); border-radius:12px; padding:36px; text-align:center;
-          color:var(--muted); cursor:pointer; transition:.15s; }
-  .drop.drag { border-color:var(--accent); color:var(--txt); }
-  table { width:100%; border-collapse:collapse; margin-top:8px; }
-  th,td { padding:7px 9px; text-align:left; border-bottom:1px solid var(--line); vertical-align:middle; }
-  th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
-       position:sticky; top:0; background:var(--bg); }
-  .grp td { background:#13161c; font-weight:600; color:var(--accent); }
-  td.num { text-align:right; font-variant-numeric:tabular-nums; }
-  .badge { font-size:11px; padding:2px 8px; border-radius:6px; white-space:nowrap; }
-  .badge.PLANNED { background:rgba(63,185,80,.15); color:var(--ok); }
-  .badge.CHECK_DUPLICATE { background:rgba(88,166,255,.15); color:var(--dup); }
-  .badge.NEEDS_REVIEW { background:rgba(210,153,34,.15); color:var(--warn); }
-  .badge.BOOKED { background:rgba(63,185,80,.25); color:var(--ok); }
-  .badge.fail { background:rgba(248,81,73,.18); color:var(--err); }
-  .review { font-size:12px; color:var(--warn); margin-top:2px; }
-  select,input[type=text],input[type=password],textarea {
-    background:var(--bg); color:var(--txt); border:1px solid var(--line);
-    border-radius:6px; padding:6px 8px; font:inherit; }
-  select,input[type=text]{ max-width:230px; }
-  textarea { width:100%; min-height:150px; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
-  .markup { color:var(--accent); font-size:11px; }
-  .mk { display:inline-block; font-size:10px; padding:1px 5px; border-radius:5px; cursor:pointer;
-        border:1px solid var(--line); color:var(--muted); user-select:none; }
-  .mk.on { background:rgba(110,123,242,.18); border-color:var(--accent); color:var(--accent); }
-  button { background:var(--accent); color:#fff; border:0; padding:9px 16px; border-radius:8px;
-           font:inherit; font-weight:600; cursor:pointer; }
-  button.ghost { background:transparent; border:1px solid var(--line); color:var(--txt); }
-  button.sm { padding:5px 10px; font-size:12px; }
-  button:disabled { opacity:.5; cursor:default; }
-  .bar { display:flex; gap:10px; align-items:center; margin:14px 0; flex-wrap:wrap; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
-  .row label { width:120px; color:var(--muted); font-size:13px; }
-  .hide { display:none; }
-  .banner { padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:13px; }
-  .banner.err { background:rgba(248,81,73,.12); border:1px solid var(--err); color:#ffb4ae; }
-  .banner.warn { background:rgba(210,153,34,.12); border:1px solid var(--warn); color:#ffdf9e; }
-  a { color:var(--accent); }
-  code { background:#000; padding:1px 5px; border-radius:4px; font-size:12px; }
-  .linkbox { word-break:break-all; background:#000; padding:8px; border-radius:6px; font-size:11px;
-             font-family:ui-monospace,monospace; max-height:90px; overflow:auto; }
+  :root{ --bg:#f3f4f6; --panel:#fff; --line:#ececef; --txt:#1b1f24; --muted:#9097a1;
+    --green:#16a34a; --greenbg:#e7f6ec; --amber:#c97f00; --amberbg:#fbf0d9; --red:#e5484d;
+    --redbg:#fdeaea; --blue:#2f78f0; --bluebg:#e9f0fe;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06); }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  .topbar{ display:flex; align-items:center; gap:16px; padding:13px 26px; background:var(--panel);
+    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:650; font-size:15px; }
+  .logo{ width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,#27c552,#15a34a);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800;
+    box-shadow:0 2px 6px rgba(21,163,74,.35); }
+  .spacer{ flex:1; }
+  .health{ font-size:12px; color:var(--muted); display:flex; gap:12px; align-items:center; }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px;
+    font-size:11px; font-weight:600; }
+  .pill::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .pill.ok{ background:var(--greenbg); color:var(--green); }
+  .pill.bad{ background:var(--redbg); color:var(--red); }
+  main{ max-width:1180px; margin:0 auto; padding:22px 26px 70px; }
+  h1.page{ font-size:24px; font-weight:680; margin:4px 0 18px; letter-spacing:-.01em; }
+  h2{ font-size:14px; margin:0 0 12px; font-weight:650; }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); }
+  .pad{ padding:18px; }
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+  .stat{ background:var(--panel); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow);
+    padding:15px 17px; display:flex; align-items:center; gap:13px; }
+  .stat-ico{ width:40px; height:40px; border-radius:11px; background:#f4f5f7; display:flex;
+    align-items:center; justify-content:center; font-size:18px; flex:none; color:#5b626d; }
+  .stat-label{ font-size:12px; color:var(--muted); margin-bottom:2px; }
+  .stat-val{ font-size:21px; font-weight:680; letter-spacing:-.02em; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .tag{ font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; }
+  .tag.green{ background:var(--greenbg); color:var(--green); }
+  .tag.amber{ background:var(--amberbg); color:var(--amber); }
+  .tag.red{ background:var(--redbg); color:var(--red); }
+  .drop{ border:1.5px dashed #d6dae0; border-radius:16px; padding:46px; text-align:center;
+    color:var(--muted); cursor:pointer; background:var(--panel); transition:.15s; }
+  .drop:hover,.drop.drag{ border-color:var(--green); color:var(--txt); background:#fbfdfb; }
+  .drop strong{ color:var(--txt); }
+  .table-card{ overflow:hidden; padding:0; }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ padding:13px 16px; text-align:left; vertical-align:middle; }
+  thead th{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    font-weight:600; background:#fafbfc; border-bottom:1px solid var(--line); }
+  tbody td{ border-bottom:1px solid var(--line); }
+  tbody tr:last-child td{ border-bottom:0; }
+  tbody tr:hover td{ background:#fafbfc; }
+  td.num{ text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+  .grp td{ background:#fff; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); font-weight:700; padding-top:16px; }
+  .cli{ display:flex; align-items:center; gap:11px; }
+  .av{ width:34px; height:34px; border-radius:50%; flex:none; display:flex; align-items:center;
+    justify-content:center; color:#fff; font-size:12px; font-weight:650; }
+  .cli-name{ font-weight:600; }
+  .cli-sub{ font-size:12px; color:var(--muted); }
+  .badge{ display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
+    font-size:12px; font-weight:600; }
+  .badge::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .badge.PLANNED,.badge.BOOKED{ background:var(--greenbg); color:var(--green); }
+  .badge.CHECK_DUPLICATE{ background:var(--bluebg); color:var(--blue); }
+  .badge.NEEDS_REVIEW{ background:var(--amberbg); color:var(--amber); }
+  .badge.fail{ background:var(--redbg); color:var(--red); }
+  .review{ font-size:12px; color:var(--amber); margin-top:3px; max-width:340px; }
+  .mk{ display:inline-block; font-size:10px; padding:2px 7px; border-radius:999px; cursor:pointer;
+    margin-left:6px; border:1px solid var(--line); color:var(--muted); font-weight:600;
+    user-select:none; vertical-align:middle; }
+  .mk.on{ background:var(--greenbg); border-color:transparent; color:var(--green); }
+  select,input[type=text],input[type=password],textarea{ background:#fff; color:var(--txt);
+    border:1px solid #dfe2e7; border-radius:9px; padding:7px 10px; font:inherit; }
+  select,input[type=text]{ max-width:240px; }
+  select:focus,input:focus,textarea:focus{ outline:none; border-color:var(--green);
+    box-shadow:0 0 0 3px rgba(22,163,74,.12); }
+  textarea{ width:100%; min-height:150px; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  input[type=checkbox]{ width:18px; height:18px; accent-color:var(--green); cursor:pointer; }
+  .btn{ background:var(--txt); color:#fff; border:0; padding:10px 18px; border-radius:11px;
+    font:inherit; font-weight:600; cursor:pointer; }
+  .btn:hover{ opacity:.9; }
+  .btn.ghost{ background:#fff; border:1px solid #dfe2e7; color:var(--txt); }
+  .btn.green{ background:var(--green); }
+  .btn.sm{ padding:6px 12px; font-size:12px; border-radius:9px; }
+  .btn:disabled{ opacity:.5; cursor:default; }
+  .bar{ display:flex; gap:10px; align-items:center; margin:14px 0 0; flex-wrap:wrap; }
+  .actionbar{ display:flex; gap:12px; align-items:center; margin-top:16px; flex-wrap:wrap; }
+  .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .row label{ width:130px; color:var(--muted); font-size:13px; }
+  .hide{ display:none; }
+  .banner{ padding:12px 16px; border-radius:12px; margin-bottom:16px; font-size:13px; }
+  .banner.warn{ background:var(--amberbg); border:1px solid #f0d9a8; color:#8a5a00; }
+  .banner.err{ background:var(--redbg); border:1px solid #f3c0c0; color:#a3262a; }
+  .muted{ color:var(--muted); font-size:12px; }
+  a{ color:var(--green); }
+  code{ background:#f1f2f4; padding:1px 6px; border-radius:5px; font-size:12px; }
+  hr{ border:0; border-top:1px solid var(--line); margin:18px 0; }
+  .linkbox{ word-break:break-all; background:#f7f8fa; border:1px solid var(--line); padding:9px;
+    border-radius:9px; font-size:11px; font-family:ui-monospace,monospace; max-height:90px; overflow:auto; color:#555; }
+  @media(max-width:760px){ .stats{ grid-template-columns:repeat(2,1fr); } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Moco Zeiterfassung</h1>
-  <span class="health" id="health"></span>
+<div class="topbar">
+  <div class="brand"><div class="logo">M</div> Moco Zeiterfassung</div>
+  <div class="health" id="health"></div>
   <div class="spacer"></div>
-  <button class="ghost sm" id="settingsBtn">Einstellungen</button>
-</header>
+  <button class="btn ghost sm" id="settingsBtn">Einstellungen</button>
+</div>
 <main>
   <div id="banner"></div>
 
   <!-- Einstellungen -->
-  <div id="settings" class="card hide">
+  <div id="settings" class="card pad hide">
     <h2>Einstellungen</h2>
-    <div class="row"><label>Token Breitbild</label><input type="password" id="tokBB" placeholder="MOCO_BREITBILD_TOKEN" style="width:340px"></div>
-    <div class="row"><label>Token Kornflex</label><input type="password" id="tokK" placeholder="MOCO_KORNFLEX_TOKEN" style="width:340px"></div>
-    <div class="row"><label></label><span class="health">Tokens werden nur in diesem Browser gespeichert (localStorage) und gehen ausschließlich direkt an Moco.</span></div>
-    <div class="bar"><button class="sm" id="saveTok">Tokens speichern</button></div>
-    <hr style="border-color:var(--line)">
+    <div class="row"><label>Token Breitbild</label><input type="password" id="tokBB" placeholder="MOCO_BREITBILD_TOKEN" style="width:340px;max-width:none"></div>
+    <div class="row"><label>Token Kornflex</label><input type="password" id="tokK" placeholder="MOCO_KORNFLEX_TOKEN" style="width:340px;max-width:none"></div>
+    <div class="row"><label></label><span class="muted">Tokens werden nur in diesem Browser gespeichert und gehen ausschließlich direkt an Moco.</span></div>
+    <div class="bar"><button class="btn sm" id="saveTok">Tokens speichern</button></div>
+    <hr>
     <h2>Zuordnungstabelle</h2>
-    <div class="health" id="cfgState"></div>
+    <div class="muted" id="cfgState"></div>
     <textarea id="cfgText" spellcheck="false"></textarea>
     <div class="bar">
-      <button class="sm" id="saveCfg">Zuordnung speichern</button>
-      <button class="ghost sm" id="makeLink">Lesezeichen-Link erzeugen</button>
+      <button class="btn sm" id="saveCfg">Zuordnung speichern</button>
+      <button class="btn ghost sm" id="makeLink">Lesezeichen-Link erzeugen</button>
     </div>
-    <div id="linkArea" class="hide">
-      <div class="health">Dieses Lesezeichen auf allen Geräten synchronisieren (iCloud/Chrome). Beim Öffnen lädt es die Zuordnung automatisch:</div>
+    <div id="linkArea" class="hide" style="margin-top:12px">
+      <div class="muted">Dieses Lesezeichen auf allen Geräten synchronisieren (iCloud/Chrome). Beim Öffnen lädt es die Zuordnung automatisch:</div>
       <div class="linkbox" id="linkOut"></div>
-      <div class="bar"><button class="sm" id="copyLink">Link kopieren</button></div>
+      <div class="bar"><button class="btn sm" id="copyLink">Link kopieren</button></div>
     </div>
   </div>
 
+  <h1 class="page">Zeiteinträge</h1>
+
+  <div id="stats" class="stats hide"></div>
+
   <!-- CSV / Plan -->
-  <div id="dropzone" class="drop card">
+  <div id="dropzone" class="drop">
     <strong>CSV hierher ziehen</strong> oder klicken<br>
     <span style="font-size:12px">Zeittracking-Export (export_…detailed.csv)</span>
     <input id="file" type="file" accept=".csv" class="hide">
   </div>
 
   <div id="planArea" class="hide">
-    <div class="card" id="summary"></div>
-    <div id="tableWrap"></div>
-    <div class="bar">
-      <button id="commitBtn">Ausgewählte buchen</button>
-      <button class="ghost" id="resetBtn">Andere CSV laden</button>
-      <span class="health" id="commitInfo"></span>
+    <div class="card table-card"><div id="tableWrap"></div></div>
+    <div class="actionbar">
+      <button class="btn green" id="commitBtn">Ausgewählte buchen</button>
+      <button class="btn ghost" id="resetBtn">Andere CSV laden</button>
+      <span class="muted" id="commitInfo"></span>
     </div>
   </div>
 </main>
@@ -313,6 +357,10 @@ let ROWS=[];
 const SL={PLANNED:'buchen',CHECK_DUPLICATE:'Dublette?',NEEDS_REVIEW:'prüfen',BOOKED:'gebucht',fail:'Fehler'};
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=id=>document.getElementById(id);
+const PALETTE=['#ef4444','#a855f7','#0d9488','#15803d','#f59e0b','#64748b','#0ea5e9','#e11d48','#d97706','#7c3aed','#0891b2','#ca8a04'];
+function avatarColor(s){ s=s||'?'; let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return PALETTE[h%PALETTE.length]; }
+function initials(s){ const w=(s||'?').replace(/[^A-Za-zÄÖÜäöü0-9 ]/g,' ').trim().split(/\s+/); return ((w[0]?w[0][0]:'')+(w[1]?w[1][0]:'')).toUpperCase()||'?'; }
+function fmtDate(s){ const p=(s||'').split('-'); return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:s; }
 
 function showBanner(){
   const b=$('banner'); b.innerHTML='';
@@ -322,11 +370,11 @@ function showBanner(){
 }
 async function health(){
   const el=$('health'); if(!MAPPINGS){ el.textContent=''; return; }
-  const mk=(n,s)=>n+'<span class="pill '+(s===200?'ok':'bad')+'">'+(s===200?'ok':(s?('HTTP '+s):'–'))+'</span>';
+  const mk=(n,s)=>'<span class="health">'+n+' <span class="pill '+(s===200?'ok':'bad')+'">'+(s===200?'ok':(s?('HTTP '+s):'–'))+'</span></span>';
   el.innerHTML='…';
   const a=await moco('breitbild','GET','/api/v1/projects?status=active&limit=1');
   const c=await moco('kornflex','GET','/api/v1/projects?status=active&limit=1');
-  el.innerHTML=mk('Breitbild',a.status)+' &nbsp; '+mk('Kornflex',c.status);
+  el.innerHTML=mk('Breitbild',a.status)+mk('Kornflex',c.status);
 }
 
 /* Settings */
@@ -356,7 +404,7 @@ function loadFile(file){
   const rd=new FileReader();
   rd.onload=async ()=>{
     $('dropzone').classList.add('hide'); $('planArea').classList.remove('hide');
-    $('summary').textContent='Plan wird berechnet, Moco wird abgefragt…';
+    $('tableWrap').innerHTML='<div class="pad muted">Plan wird berechnet, Moco wird abgefragt…</div>';
     ROWS=buildPlan(csvGroups(rd.result));
     try{ await resolveIds(ROWS); }catch(e){ console.warn(e); }
     render();
@@ -365,24 +413,31 @@ function loadFile(file){
 }
 
 function render(){
-  let html='<table><thead><tr><th>Datum</th><th>Code</th><th>Projekt</th><th>Task</th>'+
+  let html='<table><thead><tr><th>Datum</th><th>Projekt</th><th>Task</th>'+
     '<th class="num">Eff h</th><th class="num">Gebucht</th><th>Status</th><th>Buchen</th></tr></thead><tbody>';
   let inst=null;
   ROWS.forEach((r,i)=>{
-    if(r.instance!==inst){ inst=r.instance; html+='<tr class="grp"><td colspan="8">'+(inst||'UNBEKANNT').toUpperCase()+'</td></tr>'; }
+    if(r.instance!==inst){ inst=r.instance; html+='<tr class="grp"><td colspan="7">'+(inst||'UNBEKANNT').toUpperCase()+'</td></tr>'; }
     const booked=r.hours_booked.toFixed(2)+
       ' <span class="mk'+(r.markup?' on':'')+'" title="+20% Aufschlag an/aus" onclick="toggleMk('+i+')">+20%</span>';
-    const projCell = r.adhoc
-      ? '<select onchange="pickProject('+i+',this)">'+projectOptions(r.project_id)+'</select>'
-      : esc(r.project||'—');
+    const nm=r.project||r.csv_code;
+    const av='<div class="av" style="background:'+avatarColor(nm)+'">'+esc(initials(nm))+'</div>';
+    let projCell;
+    if(r.adhoc){
+      projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.project||r.csv_code||'—')+'</div>'+
+        '<select onchange="pickProject('+i+',this)" style="margin-top:4px">'+projectOptions(r.project_id)+'</select></div></div>';
+    } else {
+      projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.project||'—')+'</div>'+
+        '<div class="cli-sub">'+esc(r.csv_code||'')+'</div></div></div>';
+    }
     let taskCell;
     if(r.available_tasks&&r.available_tasks.length){
       taskCell='<select onchange="setTask('+i+',this)"><option value="">– wählen –</option>'+
         r.available_tasks.map(t=>'<option value="'+t.id+'"'+(t.name===r.task?' selected':'')+'>'+esc(t.name)+'</option>').join('')+'</select>';
     } else taskCell='<input type="text" value="'+esc(r.task||'')+'" onchange="setTaskName('+i+',this.value)">';
     const merken = (r.adhoc&&r.project_id&&r.task_id)
-      ? ' <button class="ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
-    html+='<tr><td>'+r.date+'</td><td>'+esc(r.csv_code||'')+'</td><td>'+projCell+'</td>'+
+      ? ' <button class="btn ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
+    html+='<tr><td>'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
       '<td>'+taskCell+merken+(r.review?'<div class="review">'+esc(r.review)+'</div>':'')+'</td>'+
       '<td class="num">'+r.hours_effective.toFixed(2)+'</td><td class="num">'+booked+'</td>'+
       '<td><span class="badge '+r.status+'">'+(SL[r.status]||r.status)+'</span></td>'+
@@ -432,16 +487,22 @@ function summarize(){
   const sel=ROWS.filter(r=>!r.skip); const eff=sel.reduce((a,r)=>a+r.hours_effective,0);
   const bk=sel.reduce((a,r)=>a+r.hours_booked,0);
   const rev=ROWS.filter(r=>r.status==='NEEDS_REVIEW').length, dup=ROWS.filter(r=>r.status==='CHECK_DUPLICATE').length;
-  $('summary').innerHTML='<b>'+sel.length+'</b> ausgewählt · <b>'+eff.toFixed(2)+'h</b> effektiv · <b>'+bk.toFixed(2)+'h</b> gebucht'+
-    (dup?' · <span style="color:var(--dup)">'+dup+' Dublette(n)?</span>':'')+
-    (rev?' · <span style="color:var(--warn)">'+rev+' zu prüfen</span>':'');
+  const booked=ROWS.filter(r=>r.status==='BOOKED').length;
+  const card=(ico,label,val,tag)=>'<div class="stat"><div class="stat-ico">'+ico+'</div><div>'+
+    '<div class="stat-label">'+label+'</div><div class="stat-val">'+val+(tag||'')+'</div></div></div>';
+  const s=$('stats'); s.classList.remove('hide');
+  s.innerHTML=
+    card('≡','Ausgewählt', sel.length, booked?' <span class="tag green">'+booked+' gebucht</span>':'') +
+    card('◷','Effektiv', eff.toFixed(2)+' h') +
+    card('$','Gebucht', bk.toFixed(2)+' h') +
+    card('!','Hinweise', (rev+dup), (dup?' <span class="tag amber">'+dup+' Dublette</span>':'')+(rev?' <span class="tag red">'+rev+' prüfen</span>':''));
 }
 $('commitBtn').onclick=async ()=>{ const btn=$('commitBtn'); btn.disabled=true; $('commitInfo').textContent='Buche…';
   const res=await bookRows(ROWS);
   res.results.forEach((x,i)=>{ if(x.result==='ok'){ ROWS[i].status='BOOKED'; ROWS[i].skip=true; ROWS[i].review='gebucht, id '+x.id; }
     else if(x.result==='fail'){ ROWS[i].status='fail'; ROWS[i].review=x.msg; } });
   render(); $('commitInfo').textContent=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen.'; btn.disabled=false; };
-$('resetBtn').onclick=()=>{ ROWS=[]; $('planArea').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value=''; };
+$('resetBtn').onclick=()=>{ ROWS=[]; $('planArea').classList.add('hide'); $('stats').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value=''; };
 
 /* init */
 showBanner(); health();
