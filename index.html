@@ -122,8 +122,8 @@ let MAPPINGS = null;
 (function initCfg(){
   const m = location.hash.match(/cfg=([^&]+)/);
   if(m){
-    try { MAPPINGS = b64dec(decodeURIComponent(m[1])); localStorage.setItem(LS.cfg, JSON.stringify(MAPPINGS));
-          history.replaceState(null,'',location.pathname); } catch(e){ console.warn(e); }
+    try { MAPPINGS = b64dec(decodeURIComponent(m[1])); localStorage.setItem(LS.cfg, JSON.stringify(MAPPINGS)); }
+    catch(e){ console.warn(e); }
   }
   if(!MAPPINGS){ const s=localStorage.getItem(LS.cfg); if(s) MAPPINGS=JSON.parse(s); }
 })();
