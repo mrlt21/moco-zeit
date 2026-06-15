@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moco Zeiterfassung</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2e38; --txt:#e6e8ee; --muted:#9aa3b2;
+          --ok:#3fb950; --warn:#d29922; --dup:#58a6ff; --err:#f85149; --accent:#6e7bf2; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:16px 20px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  h1 { font-size:17px; margin:0; font-weight:600; }
+  h2 { font-size:14px; margin:0 0 10px; }
+  .health { font-size:12px; color:var(--muted); }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; margin-left:4px; }
+  .pill.ok { background:rgba(63,185,80,.15); color:var(--ok); }
+  .pill.bad { background:rgba(248,81,73,.15); color:var(--err); }
+  .spacer { flex:1; }
+  main { padding:20px; max-width:1180px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:36px; text-align:center;
+          color:var(--muted); cursor:pointer; transition:.15s; }
+  .drop.drag { border-color:var(--accent); color:var(--txt); }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  th,td { padding:7px 9px; text-align:left; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+       position:sticky; top:0; background:var(--bg); }
+  .grp td { background:#13161c; font-weight:600; color:var(--accent); }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:6px; white-space:nowrap; }
+  .badge.PLANNED { background:rgba(63,185,80,.15); color:var(--ok); }
+  .badge.CHECK_DUPLICATE { background:rgba(88,166,255,.15); color:var(--dup); }
+  .badge.NEEDS_REVIEW { background:rgba(210,153,34,.15); color:var(--warn); }
+  .badge.BOOKED { background:rgba(63,185,80,.25); color:var(--ok); }
+  .badge.fail { background:rgba(248,81,73,.18); color:var(--err); }
+  .review { font-size:12px; color:var(--warn); margin-top:2px; }
+  select,input[type=text],input[type=password],textarea {
+    background:var(--bg); color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:6px 8px; font:inherit; }
+  select,input[type=text]{ max-width:230px; }
+  textarea { width:100%; min-height:150px; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .markup { color:var(--accent); font-size:11px; }
+  button { background:var(--accent); color:#fff; border:0; padding:9px 16px; border-radius:8px;
+           font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--txt); }
+  button.sm { padding:5px 10px; font-size:12px; }
+  button:disabled { opacity:.5; cursor:default; }
+  .bar { display:flex; gap:10px; align-items:center; margin:14px 0; flex-wrap:wrap; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+  .row label { width:120px; color:var(--muted); font-size:13px; }
+  .hide { display:none; }
+  .banner { padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:13px; }
+  .banner.err { background:rgba(248,81,73,.12); border:1px solid var(--err); color:#ffb4ae; }
+  .banner.warn { background:rgba(210,153,34,.12); border:1px solid var(--warn); color:#ffdf9e; }
+  a { color:var(--accent); }
+  code { background:#000; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .linkbox { word-break:break-all; background:#000; padding:8px; border-radius:6px; font-size:11px;
+             font-family:ui-monospace,monospace; max-height:90px; overflow:auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Moco Zeiterfassung</h1>
+  <span class="health" id="health"></span>
+  <div class="spacer"></div>
+  <button class="ghost sm" id="settingsBtn">Einstellungen</button>
+</header>
+<main>
+  <div id="banner"></div>
+
+  <!-- Einstellungen -->
+  <div id="settings" class="card hide">
+    <h2>Einstellungen</h2>
+    <div class="row"><label>Token Breitbild</label><input type="password" id="tokBB" placeholder="MOCO_BREITBILD_TOKEN" style="width:340px"></div>
+    <div class="row"><label>Token Kornflex</label><input type="password" id="tokK" placeholder="MOCO_KORNFLEX_TOKEN" style="width:340px"></div>
+    <div class="row"><label></label><span class="health">Tokens werden nur in diesem Browser gespeichert (localStorage) und gehen ausschließlich direkt an Moco.</span></div>
+    <div class="bar"><button class="sm" id="saveTok">Tokens speichern</button></div>
+    <hr style="border-color:var(--line)">
+    <h2>Zuordnungstabelle</h2>
+    <div class="health" id="cfgState"></div>
+    <textarea id="cfgText" spellcheck="false"></textarea>
+    <div class="bar">
+      <button class="sm" id="saveCfg">Zuordnung speichern</button>
+      <button class="ghost sm" id="makeLink">Lesezeichen-Link erzeugen</button>
+    </div>
+    <div id="linkArea" class="hide">
+      <div class="health">Dieses Lesezeichen auf allen Geräten synchronisieren (iCloud/Chrome). Beim Öffnen lädt es die Zuordnung automatisch:</div>
+      <div class="linkbox" id="linkOut"></div>
+      <div class="bar"><button class="sm" id="copyLink">Link kopieren</button></div>
+    </div>
+  </div>
+
+  <!-- CSV / Plan -->
+  <div id="dropzone" class="drop card">
+    <strong>CSV hierher ziehen</strong> oder klicken<br>
+    <span style="font-size:12px">Zeittracking-Export (export_…detailed.csv)</span>
+    <input id="file" type="file" accept=".csv" class="hide">
+  </div>
+
+  <div id="planArea" class="hide">
+    <div class="card" id="summary"></div>
+    <div id="tableWrap"></div>
+    <div class="bar">
+      <button id="commitBtn">Ausgewählte buchen</button>
+      <button class="ghost" id="resetBtn">Andere CSV laden</button>
+      <span class="health" id="commitInfo"></span>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ---------- Storage ---------- */
+const LS = { bb:'moco_tok_bb', k:'moco_tok_k', cfg:'moco_cfg' };
+function b64enc(obj){ const b=new TextEncoder().encode(JSON.stringify(obj)); let s=''; b.forEach(c=>s+=String.fromCharCode(c)); return btoa(s); }
+function b64dec(str){ const bin=atob(str); const a=Uint8Array.from(bin,c=>c.charCodeAt(0)); return JSON.parse(new TextDecoder().decode(a)); }
+
+/* Config aus #cfg= laden (Lesezeichen), sonst aus localStorage */
+let MAPPINGS = null;
+(function initCfg(){
+  const m = location.hash.match(/cfg=([^&]+)/);
+  if(m){
+    try { MAPPINGS = b64dec(decodeURIComponent(m[1])); localStorage.setItem(LS.cfg, JSON.stringify(MAPPINGS));
+          history.replaceState(null,'',location.pathname); } catch(e){ console.warn(e); }
+  }
+  if(!MAPPINGS){ const s=localStorage.getItem(LS.cfg); if(s) MAPPINGS=JSON.parse(s); }
+})();
+function tokens(){ return { breitbild: localStorage.getItem(LS.bb)||'', kornflex: localStorage.getItem(LS.k)||'' }; }
+function instCfg(key){ return MAPPINGS.instances[key]; }
+
+/* ---------- Plan-Logik (Port aus moco_import.py) ---------- */
+function normTask(s){ s=(s||'').replace(/^\s*\d+[.)]?\s*/,''); return s.replace(/\s+/g,' ').trim().toLowerCase(); }
+function mapTask(inst, name){
+  const key=(name||'').trim().toLowerCase(); if(!key) return null;
+  const al=inst.task_aliases; if(al[key]) return al[key];
+  const keys=Object.keys(al).sort((a,b)=>b.length-a.length);
+  for(const a of keys){ if(key.includes(a)) return al[a]; }
+  return null;
+}
+function markupFactor(inst, meta, task){
+  const pol=meta.markup;
+  if(pol===false || pol===undefined || meta.internal) return 1.0;
+  if(task && task===inst.shooting_task) return 1.0;
+  if(pol==='post_only') return (task && task.toLowerCase().includes('post'))?1.2:1.0;
+  if(pol===true) return 1.2;
+  return 1.0;
+}
+function findProject(timeline){
+  for(const ik of Object.keys(MAPPINGS.instances)){
+    const projs=MAPPINGS.instances[ik].projects;
+    if(timeline in projs){
+      let meta=projs[timeline];
+      if(meta.alias){ meta=projs[meta.alias]; return {ik, code:meta.alias, meta}; }
+      return {ik, code:timeline, meta};
+    }
+  }
+  return null;
+}
+function resolveRedirect(timeline,name){
+  const r=(MAPPINGS.redirects||{})[timeline]; if(!r) return null;
+  return r[(name||'').trim().toLowerCase()]||null;
+}
+function round2(x){ return Math.round(x*100)/100; }
+
+function parseCSV(text){
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const rows=[]; let f='',row=[],q=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else { if(c==='"') q=true; else if(c===','){ row.push(f);f=''; }
+      else if(c==='\n'){ row.push(f); rows.push(row); row=[]; f=''; }
+      else if(c==='\r'){} else f+=c; }
+  }
+  if(f.length||row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+function csvGroups(text){
+  const rows=parseCSV(text); if(!rows.length) return {};
+  const h=rows[0].map(x=>x.trim().toLowerCase());
+  const iT=h.indexOf('timeline'), iS=h.indexOf('start date'),
+        iD=h.indexOf('duration (minutes)'), iN=h.indexOf('name');
+  const g={};
+  for(let r=1;r<rows.length;r++){ const c=rows[r]; if(!c||!c[iT]) continue;
+    const timeline=(c[iT]||'').trim(); const date=((c[iS]||'').trim().split(' ')[0]);
+    const minutes=parseFloat(c[iD]||'0')||0; const name=(c[iN]||'').trim();
+    if(!timeline||!date) continue;
+    const key=date+'|'+timeline; (g[key]=g[key]||[]).push({name,minutes});
+  }
+  return g;
+}
+
+function buildPlan(groups){
+  const rows=[];
+  for(const key of Object.keys(groups).sort()){
+    const [date,timeline]=key.split('|'); const items=groups[key];
+    const byTask={};
+    for(const {name,minutes} of items){
+      const eff=resolveRedirect(timeline,name)||timeline;
+      const found=findProject(eff);
+      let tk;
+      if(!found) tk=eff+'|__UNKNOWN__|';
+      else { const inst=MAPPINGS.instances[found.ik];
+             const task=found.meta.internal?'Administration':mapTask(inst,name);
+             tk=eff+'|'+found.ik+'|'+(task||''); }
+      const b=byTask[tk]||(byTask[tk]={minutes:0,names:[],eff,name0:name});
+      b.minutes+=minutes; if(name) b.names.push(name);
+    }
+    for(const tk of Object.keys(byTask)){
+      const b=byTask[tk]; const parts=tk.split('|'); const eff=b.eff;
+      const ik=parts[1]; const task=parts.slice(2).join('|')||null;
+      const hours=round2(b.minutes/60);
+      const desc=[...new Set(b.names)].join(', ');
+      if(ik==='__UNKNOWN__'){ rows.push({date,csv_code:eff,instance:null,project:null,project_id:null,
+        task:null,task_id:null,hours_effective:hours,hours_booked:hours,markup:false,
+        description:desc,status:'NEEDS_REVIEW',review:'Unbekanntes Kürzel – in Zuordnung ergänzen.',skip:true}); continue; }
+      const inst=MAPPINGS.instances[ik]; const found=findProject(eff); const meta=found.meta;
+      const realTask = meta.internal?'Administration':task;
+      const f=markupFactor(inst,meta,realTask);
+      const row={date,csv_code:eff,instance:ik,project:meta.name,project_id:meta.project_id||null,
+        identifier:meta.identifier||null,task:realTask,task_id:null,
+        hours_effective:hours,hours_booked:round2(hours*f),markup:f!==1.0,
+        description:desc||(realTask||''),status:'PLANNED',skip:false};
+      if(!realTask){ row.status='NEEDS_REVIEW'; row.review="Tätigkeit '"+desc+"' passt auf keinen Task – Task wählen."; row.skip=true; }
+      if(meta.note) row.note=meta.note;
+      rows.push(row);
+    }
+  }
+  rows.sort((a,b)=>(a.instance||'zzz').localeCompare(b.instance||'zzz')||a.date.localeCompare(b.date)||(a.csv_code||'').localeCompare(b.csv_code||''));
+  return rows;
+}
+
+/* ---------- Moco API (direkt aus dem Browser) ---------- */
+async function moco(ik, method, path, body){
+  const inst=instCfg(ik); const tok=tokens()[ik];
+  if(!tok) return {status:0, data:{error:'kein Token'}};
+  try{
+    const res=await fetch(inst.base_url.replace(/\/$/,'')+path,{method,
+      headers:{'Authorization':'Token token='+tok, ...(body?{'Content-Type':'application/json'}:{})},
+      body: body?JSON.stringify(body):undefined});
+    let data=null; const t=await res.text(); try{ data=t?JSON.parse(t):null; }catch(e){ data=t; }
+    return {status:res.status, data};
+  }catch(e){ return {status:-1, data:{error:String(e)}}; }
+}
+
+async function resolveIds(rows){
+  const projCache={}, taskCache={}, actCache={};
+  for(const r of rows){
+    const ik=r.instance; if(!ik) continue;
+    if(!r.project_id && r.identifier){
+      if(!projCache[ik]){ const {status,data}=await moco(ik,'GET','/api/v1/projects?status=active&limit=200');
+        projCache[ik]={}; if(status===200&&Array.isArray(data)) data.forEach(p=>{ if(p.identifier) projCache[ik][p.identifier]=p.id; }); }
+      r.project_id=projCache[ik][r.identifier]||null;
+      if(!r.project_id){ r.status='NEEDS_REVIEW'; r.review='project_id für '+r.identifier+' nicht gefunden (evtl. archiviert).'; r.skip=true; }
+    }
+    if(r.project_id){
+      const ck=ik+'|'+r.project_id;
+      if(!taskCache[ck]){ const {status,data}=await moco(ik,'GET','/api/v1/projects/'+r.project_id+'/tasks');
+        taskCache[ck]=(status===200&&Array.isArray(data))?data:[]; }
+      r.available_tasks=taskCache[ck].map(t=>({id:t.id,name:t.name||''}));
+      if(r.task && !r.task_id){
+        const want=normTask(r.task); let m=taskCache[ck].find(t=>normTask(t.name||'')===want);
+        if(!m) m=taskCache[ck].find(t=>want&&normTask(t.name||'').includes(want));
+        if(m) r.task_id=m.id;
+        else { r.status='NEEDS_REVIEW'; r.review="Task '"+r.task+"' im Projekt nicht gefunden."; r.skip=true; }
+      }
+      const ek=ik+'|'+r.date;
+      if(!actCache[ek]){ const {status,data}=await moco(ik,'GET','/api/v1/activities?from='+r.date+'&to='+r.date);
+        actCache[ek]=(status===200&&Array.isArray(data))?data:[]; }
+      const same=actCache[ek].filter(a=>(a.project||{}).id===r.project_id);
+      if(same.length){ const tot=round2(same.reduce((s,a)=>s+parseFloat(a.hours||0),0));
+        const ts=[...new Set(same.map(a=>(a.task||{}).name||'?'))].join(', ');
+        r.existing={count:same.length,hours:tot,tasks:ts};
+        if(r.status==='PLANNED'){ r.status='CHECK_DUPLICATE';
+          r.review='Bereits '+tot+'h auf diesem Projekt am '+r.date+' (Tasks: '+ts+'). Prüfen, ggf. abwählen.'; } }
+    }
+  }
+  return rows;
+}
+
+function recomputeMoney(r){
+  if(!r.instance) return; const inst=instCfg(r.instance); const f=findProject(r.csv_code); if(!f) return;
+  const factor=markupFactor(inst,f.meta,r.task); r.markup=factor!==1.0; r.hours_booked=round2(r.hours_effective*factor);
+}
+async function bookRows(rows){
+  let booked=0,failed=0,skipped=0; const results=[];
+  for(const r of rows){ recomputeMoney(r);
+    if(r.skip){ skipped++; results.push({result:'skipped'}); continue; }
+    if(!(r.project_id&&r.task_id)){ skipped++; results.push({result:'skipped',msg:'unvollständig'}); continue; }
+    const {status,data}=await moco(r.instance,'POST','/api/v1/activities',
+      {date:r.date,project_id:r.project_id,task_id:r.task_id,hours:r.hours_booked,description:r.description||''});
+    if(status===200||status===201){ booked++; results.push({result:'ok',id:(data||{}).id}); }
+    else { failed++; const msg=(data&&data.message)?data.message:JSON.stringify(data); results.push({result:'fail',msg:'HTTP '+status+': '+msg}); }
+  }
+  return {booked,failed,skipped,results};
+}
+
+/* ---------- UI ---------- */
+let ROWS=[];
+const SL={PLANNED:'buchen',CHECK_DUPLICATE:'Dublette?',NEEDS_REVIEW:'prüfen',BOOKED:'gebucht',fail:'Fehler'};
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=id=>document.getElementById(id);
+
+function showBanner(){
+  const b=$('banner'); b.innerHTML='';
+  if(!MAPPINGS){ b.innerHTML='<div class="banner warn">Noch keine Zuordnungstabelle geladen. Öffne <b>Einstellungen</b> und füge sie ein, oder öffne die App über dein Lesezeichen.</div>'; return; }
+  const t=tokens();
+  if(!t.breitbild||!t.kornflex){ b.innerHTML='<div class="banner warn">Token fehlt. Unter <b>Einstellungen</b> Breitbild- und Kornflex-Token eintragen.</div>'; }
+}
+async function health(){
+  const el=$('health'); if(!MAPPINGS){ el.textContent=''; return; }
+  const mk=(n,s)=>n+'<span class="pill '+(s===200?'ok':'bad')+'">'+(s===200?'ok':(s?('HTTP '+s):'–'))+'</span>';
+  el.innerHTML='…';
+  const a=await moco('breitbild','GET','/api/v1/projects?status=active&limit=1');
+  const c=await moco('kornflex','GET','/api/v1/projects?status=active&limit=1');
+  el.innerHTML=mk('Breitbild',a.status)+' &nbsp; '+mk('Kornflex',c.status);
+}
+
+/* Settings */
+$('settingsBtn').onclick=()=>{ const s=$('settings'); s.classList.toggle('hide');
+  $('tokBB').value=localStorage.getItem(LS.bb)||''; $('tokK').value=localStorage.getItem(LS.k)||'';
+  $('cfgText').value=MAPPINGS?JSON.stringify(MAPPINGS,null,2):'';
+  $('cfgState').textContent=MAPPINGS?'Geladen.':'Keine Zuordnung vorhanden – JSON einfügen und speichern.'; };
+$('saveTok').onclick=()=>{ localStorage.setItem(LS.bb,$('tokBB').value.trim()); localStorage.setItem(LS.k,$('tokK').value.trim());
+  showBanner(); health(); $('saveTok').textContent='Gespeichert ✓'; setTimeout(()=>$('saveTok').textContent='Tokens speichern',1200); };
+$('saveCfg').onclick=()=>{ try{ MAPPINGS=JSON.parse($('cfgText').value); localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS));
+  $('cfgState').textContent='Gespeichert ✓'; showBanner(); health(); }catch(e){ $('cfgState').textContent='Fehler im JSON: '+e.message; } };
+$('makeLink').onclick=()=>{ if(!MAPPINGS){ alert('Erst Zuordnung speichern.'); return; }
+  const url=location.origin+location.pathname+'#cfg='+encodeURIComponent(b64enc(MAPPINGS));
+  $('linkOut').textContent=url; $('linkArea').classList.remove('hide'); };
+$('copyLink').onclick=()=>{ navigator.clipboard.writeText($('linkOut').textContent); $('copyLink').textContent='Kopiert ✓'; setTimeout(()=>$('copyLink').textContent='Link kopieren',1200); };
+
+/* CSV */
+const dz=$('dropzone'), fi=$('file');
+dz.onclick=()=>fi.click();
+fi.onchange=e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); };
+['dragover','dragenter'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
+dz.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+
+function loadFile(file){
+  if(!MAPPINGS){ alert('Bitte zuerst die Zuordnung laden (Einstellungen oder Lesezeichen).'); return; }
+  const rd=new FileReader();
+  rd.onload=async ()=>{
+    $('dropzone').classList.add('hide'); $('planArea').classList.remove('hide');
+    $('summary').textContent='Plan wird berechnet, Moco wird abgefragt…';
+    ROWS=buildPlan(csvGroups(rd.result));
+    try{ await resolveIds(ROWS); }catch(e){ console.warn(e); }
+    render();
+  };
+  rd.readAsText(file);
+}
+
+function render(){
+  let html='<table><thead><tr><th>Datum</th><th>Code</th><th>Projekt</th><th>Task</th>'+
+    '<th class="num">Eff h</th><th class="num">Gebucht</th><th>Status</th><th>Buchen</th></tr></thead><tbody>';
+  let inst=null;
+  ROWS.forEach((r,i)=>{
+    if(r.instance!==inst){ inst=r.instance; html+='<tr class="grp"><td colspan="8">'+(inst||'UNBEKANNT').toUpperCase()+'</td></tr>'; }
+    const booked=r.hours_booked.toFixed(2)+(r.markup?'<span class="markup"> +20%</span>':'');
+    let taskCell;
+    if(r.available_tasks&&r.available_tasks.length){
+      taskCell='<select onchange="setTask('+i+',this)"><option value="">– wählen –</option>'+
+        r.available_tasks.map(t=>'<option value="'+t.id+'"'+(t.name===r.task?' selected':'')+'>'+esc(t.name)+'</option>').join('')+'</select>';
+    } else taskCell='<input type="text" value="'+esc(r.task||'')+'" onchange="setTaskName('+i+',this.value)">';
+    html+='<tr><td>'+r.date+'</td><td>'+esc(r.csv_code||'')+'</td><td>'+esc(r.project||'—')+'</td>'+
+      '<td>'+taskCell+(r.review?'<div class="review">'+esc(r.review)+'</div>':'')+'</td>'+
+      '<td class="num">'+r.hours_effective.toFixed(2)+'</td><td class="num">'+booked+'</td>'+
+      '<td><span class="badge '+r.status+'">'+(SL[r.status]||r.status)+'</span></td>'+
+      '<td><input type="checkbox" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;summarize()"></td></tr>';
+  });
+  html+='</tbody></table>'; $('tableWrap').innerHTML=html; summarize();
+}
+window.setTask=(i,sel)=>{ const o=sel.options[sel.selectedIndex]; ROWS[i].task_id=o.value?parseInt(o.value):null;
+  ROWS[i].task=o.value?o.text:null; if(o.value){ ROWS[i].skip=false; ROWS[i].status='PLANNED'; ROWS[i].review=null; recomputeMoney(ROWS[i]); } render(); };
+window.setTaskName=(i,v)=>{ ROWS[i].task=v; ROWS[i].task_id=null; };
+window.summarize=summarize;
+function summarize(){
+  const sel=ROWS.filter(r=>!r.skip); const eff=sel.reduce((a,r)=>a+r.hours_effective,0);
+  const bk=sel.reduce((a,r)=>a+r.hours_booked,0);
+  const rev=ROWS.filter(r=>r.status==='NEEDS_REVIEW').length, dup=ROWS.filter(r=>r.status==='CHECK_DUPLICATE').length;
+  $('summary').innerHTML='<b>'+sel.length+'</b> ausgewählt · <b>'+eff.toFixed(2)+'h</b> effektiv · <b>'+bk.toFixed(2)+'h</b> gebucht'+
+    (dup?' · <span style="color:var(--dup)">'+dup+' Dublette(n)?</span>':'')+
+    (rev?' · <span style="color:var(--warn)">'+rev+' zu prüfen</span>':'');
+}
+$('commitBtn').onclick=async ()=>{ const btn=$('commitBtn'); btn.disabled=true; $('commitInfo').textContent='Buche…';
+  const res=await bookRows(ROWS);
+  res.results.forEach((x,i)=>{ if(x.result==='ok'){ ROWS[i].status='BOOKED'; ROWS[i].skip=true; ROWS[i].review='gebucht, id '+x.id; }
+    else if(x.result==='fail'){ ROWS[i].status='fail'; ROWS[i].review=x.msg; } });
+  render(); $('commitInfo').textContent=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen.'; btn.disabled=false; };
+$('resetBtn').onclick=()=>{ ROWS=[]; $('planArea').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value=''; };
+
+/* init */
+showBanner(); health();
+if(!MAPPINGS) $('settings').classList.remove('hide');
+</script>
+</body>
+</html>
