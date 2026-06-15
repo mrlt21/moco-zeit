@@ -180,6 +180,13 @@ let ALL_PROJECTS={};  // {breitbild:[...], kornflex:[...]} – für Dropdown bei
 
 /* ---------- Plan-Logik (Port aus moco_import.py) ---------- */
 function normTask(s){ s=(s||'').replace(/^\s*\d+[.)]?\s*/,''); return s.replace(/\s+/g,' ').trim().toLowerCase(); }
+function matchTask(tasks, wantName){
+  const want=normTask(wantName); if(!want||!tasks) return null;
+  return tasks.find(t=>normTask(t.name||'')===want)
+      || tasks.find(t=>normTask(t.name||'').includes(want))
+      || tasks.find(t=>want.includes(normTask(t.name||'')))
+      || null;
+}
 function mapTask(inst, name){
   const key=(name||'').trim().toLowerCase(); if(!key) return null;
   const al=inst.task_aliases; if(al[key]) return al[key];
@@ -190,8 +197,9 @@ function mapTask(inst, name){
 function markupFactor(inst, meta, task){
   const pol=meta.markup;
   if(pol===false || pol===undefined || meta.internal) return 1.0;
-  if(task && task===inst.shooting_task) return 1.0;
-  if(pol==='post_only') return (task && task.toLowerCase().includes('post'))?1.2:1.0;
+  const tn=(task||'').toLowerCase(), sh=(inst.shooting_task||'').toLowerCase();
+  if(tn && sh && tn.includes(sh)) return 1.0;               // Shooting/Dreh nie Aufschlag (auch "Produktion - Shooting Days")
+  if(pol==='post_only') return tn.includes('post')?1.2:1.0;
   if(pol===true) return 1.2;
   return 1.0;
 }
@@ -313,9 +321,8 @@ async function resolveIds(rows){
         taskCache[ck]=(status===200&&Array.isArray(data))?data:[]; }
       r.available_tasks=taskCache[ck].map(t=>({id:t.id,name:t.name||''}));
       if(r.task && !r.task_id){
-        const want=normTask(r.task); let m=taskCache[ck].find(t=>normTask(t.name||'')===want);
-        if(!m) m=taskCache[ck].find(t=>want&&normTask(t.name||'').includes(want));
-        if(m) r.task_id=m.id;
+        const m=matchTask(taskCache[ck], r.task);
+        if(m){ r.task_id=m.id; r.task=m.name; }
         else { r.status='NEEDS_REVIEW'; r.review="Task '"+r.task+"' im Projekt nicht gefunden."; r.skip=true; }
       }
       const ek=ik+'|'+r.date;
@@ -433,7 +440,7 @@ function render(){
     let taskCell;
     if(r.available_tasks&&r.available_tasks.length){
       taskCell='<select onchange="setTask('+i+',this)"><option value="">– wählen –</option>'+
-        r.available_tasks.map(t=>'<option value="'+t.id+'"'+(t.name===r.task?' selected':'')+'>'+esc(t.name)+'</option>').join('')+'</select>';
+        r.available_tasks.map(t=>'<option value="'+t.id+'"'+(t.id===r.task_id?' selected':'')+'>'+esc(t.name)+'</option>').join('')+'</select>';
     } else taskCell='<input type="text" value="'+esc(r.task||'')+'" onchange="setTaskName('+i+',this.value)">';
     const merken = (r.adhoc&&r.project_id&&r.task_id)
       ? ' <button class="btn ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
@@ -474,6 +481,10 @@ window.pickProject=async(i,sel)=>{
   recomputeMoney(r);
   const {status,data}=await moco(ik,'GET','/api/v1/projects/'+pid+'/tasks');
   r.available_tasks=(status===200&&Array.isArray(data))?data.map(t=>({id:t.id,name:t.name||''})):[];
+  // smarte Vorauswahl aus dem CSV-Namen (z.B. POST -> Post Production); sonst offen lassen
+  const guess=mapTask(instCfg(ik), r.description||'');
+  const m = guess ? matchTask(r.available_tasks, guess) : null;
+  if(m){ r.task_id=m.id; r.task=m.name; r.status='PLANNED'; r.review=null; r.skip=false; recomputeMoney(r); }
   render();
 };
 window.toggleMk=(i)=>{ const r=ROWS[i]; r.markup=!r.markup; r.markup_manual=true;
