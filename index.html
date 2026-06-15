@@ -46,8 +46,9 @@
     color:var(--muted); cursor:pointer; background:var(--panel); transition:.15s; }
   .drop:hover,.drop.drag{ border-color:var(--green); color:var(--txt); background:#fbfdfb; }
   .drop strong{ color:var(--txt); }
-  .table-card{ overflow:hidden; padding:0; }
-  table{ width:100%; border-collapse:collapse; }
+  .table-card{ overflow-x:auto; padding:0; }
+  table{ width:100%; border-collapse:collapse; min-width:880px; }
+  .desc{ width:190px; max-width:190px; }
   th,td{ padding:13px 16px; text-align:left; vertical-align:middle; }
   thead th{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
     font-weight:600; background:#fafbfc; border-bottom:1px solid var(--line); }
@@ -425,11 +426,11 @@ function loadFile(file){
 }
 
 function render(){
-  let html='<table><thead><tr><th>Datum</th><th>Projekt</th><th>Task</th>'+
+  let html='<table><thead><tr><th>Datum</th><th>Projekt</th><th>Task</th><th>Beschrieb</th>'+
     '<th class="num">Eff h</th><th class="num">Gebucht</th><th>Status</th><th>Buchen</th></tr></thead><tbody>';
   let inst=null;
   ROWS.forEach((r,i)=>{
-    if(r.instance!==inst){ inst=r.instance; html+='<tr class="grp"><td colspan="7">'+(inst||'UNBEKANNT').toUpperCase()+'</td></tr>'; }
+    if(r.instance!==inst){ inst=r.instance; html+='<tr class="grp"><td colspan="8">'+(inst||'UNBEKANNT').toUpperCase()+'</td></tr>'; }
     const booked=r.hours_booked.toFixed(2)+
       ' <span class="mk'+(r.markup?' on':'')+'" title="+20% Aufschlag an/aus" onclick="toggleMk('+i+')">+20%</span>';
     const nm=r.project||r.csv_code;
@@ -451,6 +452,7 @@ function render(){
       ? ' <button class="btn ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
     html+='<tr><td>'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
       '<td>'+taskCell+merken+(r.review?'<div class="review">'+esc(r.review)+'</div>':'')+'</td>'+
+      '<td><input type="text" class="desc" value="'+esc(r.description||'')+'" placeholder="Beschrieb…" onchange="ROWS['+i+'].description=this.value"></td>'+
       '<td class="num">'+r.hours_effective.toFixed(2)+'</td><td class="num">'+booked+'</td>'+
       '<td><span class="badge '+r.status+'">'+(SL[r.status]||r.status)+'</span></td>'+
       '<td><input type="checkbox" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;summarize()"></td></tr>';
@@ -463,13 +465,18 @@ window.setTaskName=(i,v)=>{ ROWS[i].task=v; ROWS[i].task_id=null; };
 
 function projectOptions(selPid){
   let o='<option value="">– Projekt wählen –</option>';
+  const tag={breitbild:'Breitbild',kornflex:'Kornflex'};
   for(const ik of Object.keys(MAPPINGS.instances)){
     const list=ALL_PROJECTS[ik]||[]; if(!list.length) continue;
-    o+='<optgroup label="'+ik+'">';
-    list.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(p=>{
-      o+='<option value="'+ik+'|'+p.id+'"'+(p.id===selPid?' selected':'')+'>'+
-         esc(p.name)+(p.identifier?' ('+p.identifier+')':'')+'</option>'; });
-    o+='</optgroup>';
+    const byCust={};
+    list.forEach(p=>{ const c=((p.customer||{}).name)||'– ohne Kunde –'; (byCust[c]=byCust[c]||[]).push(p); });
+    Object.keys(byCust).sort((a,b)=>a.localeCompare(b)).forEach(cust=>{
+      o+='<optgroup label="'+esc((tag[ik]||ik)+' · '+cust)+'">';
+      byCust[cust].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(p=>{
+        o+='<option value="'+ik+'|'+p.id+'"'+(p.id===selPid?' selected':'')+'>'+
+           esc(p.name)+(p.identifier?' ('+p.identifier+')':'')+'</option>'; });
+      o+='</optgroup>';
+    });
   }
   return o;
 }
