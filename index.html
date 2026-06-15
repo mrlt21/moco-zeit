@@ -301,7 +301,12 @@ async function moco(ik, method, path, body){
 }
 
 async function resolveIds(rows){
-  const taskCache={}, actCache={};
+  const taskCache={}, actCache={}, meId={};
+  // Aktueller Benutzer pro Instanz (Dublettencheck nur gegen EIGENE Einträge, nicht das ganze Team)
+  for(const ik of Object.keys(MAPPINGS.instances)){
+    const {status,data}=await moco(ik,'GET','/api/v1/session');
+    meId[ik]=(status===200&&data)?data.id:null;
+  }
   // Alle Projekte beider Instanzen laden (Dropdown bei unbekannten Kürzeln + identifier-Auflösung)
   for(const ik of Object.keys(MAPPINGS.instances)){
     if(!ALL_PROJECTS[ik]){ const {status,data}=await moco(ik,'GET','/api/v1/projects?status=active&limit=200');
@@ -325,10 +330,10 @@ async function resolveIds(rows){
         if(m){ r.task_id=m.id; r.task=m.name; }
         else { r.status='NEEDS_REVIEW'; r.review="Task '"+r.task+"' im Projekt nicht gefunden."; r.skip=true; }
       }
-      const ek=ik+'|'+r.date;
-      if(!actCache[ek]){ const {status,data}=await moco(ik,'GET','/api/v1/activities?from='+r.date+'&to='+r.date);
-        actCache[ek]=(status===200&&Array.isArray(data))?data:[]; }
-      const same=actCache[ek].filter(a=>(a.project||{}).id===r.project_id);
+      const ek=ik+'|'+r.date; const uid=meId[ik];
+      if(!actCache[ek]){ const q='/api/v1/activities?from='+r.date+'&to='+r.date+(uid?('&user_id='+uid):'');
+        const {status,data}=await moco(ik,'GET',q); actCache[ek]=(status===200&&Array.isArray(data))?data:[]; }
+      const same=actCache[ek].filter(a=>(a.project||{}).id===r.project_id && (!uid || (a.user||{}).id===uid));
       if(same.length){ const tot=round2(same.reduce((s,a)=>s+parseFloat(a.hours||0),0));
         const ts=[...new Set(same.map(a=>(a.task||{}).name||'?'))].join(', ');
         r.existing={count:same.length,hours:tot,tasks:ts};
