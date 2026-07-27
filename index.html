@@ -125,7 +125,46 @@
   .drop-ico{ width:46px; height:46px; margin:0 auto 12px; border-radius:13px; background:var(--greenbg);
     color:var(--green); display:flex; align-items:center; justify-content:center; }
   .drop-ico svg{ width:22px; height:22px; }
+  .hrs{ width:70px; max-width:70px; text-align:right; font-weight:600; padding:5px 8px;
+    font-variant-numeric:tabular-nums; }
+  :focus-visible{ outline:2px solid var(--green); outline-offset:2px; }
+  .maplist table{ width:100%; border-collapse:collapse; font-size:12px; margin:6px 0 4px; }
+  .maplist th{ text-align:left; font-size:10.5px; color:var(--muted); font-weight:600; padding:5px 8px;
+    border-bottom:1px solid var(--line); }
+  .maplist td{ padding:5px 8px; border-bottom:1px solid #f4f5f7; }
+  /* Responsive: unter 700px wird die Tabelle zu Tages-Karten */
   @media(max-width:760px){ .stats{ grid-template-columns:repeat(2,1fr); } }
+  @media(max-width:700px){
+    main{ padding:14px 12px 90px; }
+    .topbar{ padding:10px 14px; gap:10px; flex-wrap:wrap; }
+    h1.page{ font-size:20px; margin:6px 0 12px; }
+    .stats{ gap:10px; margin-bottom:12px; }
+    .stat{ padding:11px 13px; gap:10px; }
+    .stat-ico{ display:none; }
+    .stat-val{ font-size:18px; }
+    .drop{ padding:32px 18px; }
+    .table-card{ background:transparent; border:0; box-shadow:none; overflow:visible; }
+    table,tbody{ display:block; width:100%; }
+    thead{ display:none; }
+    tr{ display:block; }
+    tbody tr:not(.grp){ background:var(--panel); border:1px solid var(--line); border-radius:14px;
+      box-shadow:var(--shadow); margin-bottom:10px; padding:10px 13px; }
+    tbody tr:hover td{ background:transparent; }
+    tbody td{ display:flex; align-items:center; justify-content:space-between; gap:10px;
+      border-bottom:0; padding:4px 0; }
+    td[data-l]::before{ content:attr(data-l); font-size:10.5px; text-transform:uppercase;
+      letter-spacing:.05em; color:var(--muted); font-weight:600; flex:none; }
+    .grp td{ background:transparent; padding:12px 2px 4px; display:block; }
+    .cli{ max-width:none; }
+    .review{ max-width:none; text-align:right; }
+    select,input[type=text]{ max-width:58vw; }
+    .desc{ width:58vw; max-width:58vw; }
+    .projsearch{ width:58vw; max-width:58vw; }
+    .row label{ width:100%; }
+    .row input[type=password],.row input[type=text]{ width:100% !important; max-width:100% !important; }
+    .actionbar{ padding:10px 0; gap:8px; }
+    .actionbar .btn{ padding:10px 14px; font-size:13px; }
+  }
 </style>
 </head>
 <body>
@@ -141,12 +180,22 @@
   <!-- Einstellungen -->
   <div id="settings" class="card pad hide">
     <h2>Einstellungen</h2>
-    <div class="row"><label>Token Breitbild</label><input type="password" id="tokBB" placeholder="MOCO_BREITBILD_TOKEN" style="width:340px;max-width:none"></div>
-    <div class="row"><label>Token Kornflex</label><input type="password" id="tokK" placeholder="MOCO_KORNFLEX_TOKEN" style="width:340px;max-width:none"></div>
+    <div class="row"><label>Token Breitbild</label><input type="password" id="tokBB" placeholder="MOCO_BREITBILD_TOKEN" style="width:340px;max-width:none"><button class="btn ghost sm" id="testBB" type="button">Testen</button><span id="tokBBres"></span></div>
+    <div class="row"><label>Token Kornflex</label><input type="password" id="tokK" placeholder="MOCO_KORNFLEX_TOKEN" style="width:340px;max-width:none"><button class="btn ghost sm" id="testK" type="button">Testen</button><span id="tokKres"></span></div>
     <div class="row"><label></label><span class="muted">Tokens werden nur in diesem Browser gespeichert und gehen ausschließlich direkt an Moco.</span></div>
     <div class="bar"><button class="btn sm" id="saveTok">Tokens speichern</button></div>
     <hr>
-    <h2>Zuordnungstabelle</h2>
+    <h2>Bekannte Kürzel</h2>
+    <div class="muted">Zuordnung CSV-Kürzel → Moco-Projekt. Änderungen gelten sofort in diesem Browser; für andere Geräte danach unten den Lesezeichen-Link neu erzeugen.</div>
+    <div id="mapList" class="maplist"></div>
+    <div class="bar">
+      <input type="text" id="newCode" placeholder="Kürzel (z.B. K_NEU)" style="max-width:150px">
+      <input type="text" id="newProj" list="projlist" placeholder="Projekt suchen…" style="max-width:250px">
+      <label style="font-size:12px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="newMk">+20%</label>
+      <button class="btn sm" id="addMap" type="button">Hinzufügen</button>
+    </div>
+    <hr>
+    <h2>Zuordnungstabelle (erweitert, JSON)</h2>
     <div class="muted" id="cfgState"></div>
     <textarea id="cfgText" spellcheck="false"></textarea>
     <div class="bar">
@@ -172,11 +221,13 @@
     <input id="file" type="file" accept=".csv" class="hide">
   </div>
 
+  <div id="dlhost"></div>
   <div id="planArea" class="hide">
     <div class="card table-card"><div id="tableWrap"></div></div>
     <div class="actionbar">
       <button class="btn green" id="commitBtn">Ausgewählte buchen</button>
       <button class="btn ghost" id="undoBtn" style="display:none">Letzte Buchung rückgängig</button>
+      <button class="btn ghost" id="rndBtn" title="Gebuchte Stunden auf Viertelstunden runden">¼-h-Rundung: aus</button>
       <button class="btn ghost" id="resetBtn">Andere CSV laden</button>
       <span class="muted" id="commitInfo"></span>
     </div>
@@ -401,12 +452,17 @@ async function resolveIds(rows){
   return rows;
 }
 
+const RND_LS='moco_round';
+const roundOn=()=>{ try{ return localStorage.getItem(RND_LS)==='1'; }catch(e){ return false; } };
 function recomputeMoney(r){
-  if(!r.instance) return; const f=findProject(r.csv_code); let factor;
+  if(!r.instance || r.hours_manual) return;                  // von Hand gesetzte Stunden nie überschreiben
+  const f=findProject(r.csv_code); let factor;
   if(r.markup_manual){ factor=r.markup?1.2:1.0; }           // manueller +20%-Schalter gewinnt
   else if(f){ factor=markupFactor(instCfg(r.instance),f.meta,r.task); r.markup=factor!==1.0; }
   else { factor=r.markup?1.2:1.0; }                          // Ad-hoc-Projekt ohne Regel
   r.hours_booked=round2(r.hours_effective*factor);
+  if(roundOn() && r.hours_booked>0)                          // optional: auf Viertelstunden runden
+    r.hours_booked=Math.max(0.25, Math.round(r.hours_booked*4)/4);
 }
 function friendlyError(status, data){
   const msg=(data&&data.message)?data.message:(typeof data==='string'?data:'');
@@ -418,9 +474,10 @@ function friendlyError(status, data){
   if(!status||status<0) return 'Netzwerkfehler/Timeout.';
   return 'HTTP '+status+(msg?(': '+msg):'');
 }
-async function bookRows(rows){
-  let booked=0,failed=0,skipped=0; const results=new Array(rows.length); const created=[];
+async function bookRows(rows, onStep){
+  let booked=0,failed=0,skipped=0,done=0; const results=new Array(rows.length); const created=[];
   const toBook=rows.map((r,i)=>({r,i})).filter(o=>!o.r.skip && o.r.project_id && o.r.task_id);
+  const total=toBook.length;
   // Idempotenz: frische EIGENE Einträge pro Instanz über den Buchungsbereich holen
   const seen={};  // ik|pid|taskid|date -> [hours]
   await Promise.all([...new Set(toBook.map(o=>o.r.instance))].map(async ik=>{
@@ -437,12 +494,14 @@ async function bookRows(rows){
   for(const {r,i} of toBook){
     recomputeMoney(r); const h=round2(r.hours_booked);
     const key=r.instance+'|'+r.project_id+'|'+r.task_id+'|'+r.date;
-    if((seen[key]||[]).some(x=>Math.abs(x-h)<0.005)){ results[i]={result:'exists'}; skipped++; continue; }
+    if((seen[key]||[]).some(x=>Math.abs(x-h)<0.005)){ results[i]={result:'exists'}; skipped++;
+      done++; if(onStep) onStep(done,total,i,true); continue; }
     const {status,data}=await moco(r.instance,'POST','/api/v1/activities',
       {date:r.date,project_id:r.project_id,task_id:r.task_id,hours:h,description:r.description||''});
     if(status===200||status===201){ booked++; const id=(data||{}).id;
       results[i]={result:'ok',id}; created.push({instance:r.instance,id,i}); (seen[key]=seen[key]||[]).push(h); }
     else { failed++; results[i]={result:'fail',msg:friendlyError(status,data)}; }
+    done++; if(onStep) onStep(done,total,i,results[i].result!=='fail');
   }
   return {booked,failed,skipped,results,created};
 }
@@ -478,7 +537,54 @@ async function health(){
 $('settingsBtn').onclick=()=>{ const s=$('settings'); s.classList.toggle('hide');
   $('tokBB').value=localStorage.getItem(LS.bb)||''; $('tokK').value=localStorage.getItem(LS.k)||'';
   $('cfgText').value=MAPPINGS?JSON.stringify(MAPPINGS,null,2):'';
-  $('cfgState').textContent=MAPPINGS?'Geladen.':'Keine Zuordnung vorhanden – JSON einfügen und speichern.'; };
+  $('cfgState').textContent=MAPPINGS?'Geladen.':'Keine Zuordnung vorhanden – JSON einfügen und speichern.';
+  renderMapList(); };
+async function testTok(ik, inputId, resId){                  // Sofort-Test pro Token-Feld (#7)
+  const el=$(resId); el.innerHTML='…';
+  const inst=MAPPINGS && MAPPINGS.instances[ik];
+  if(!inst){ el.innerHTML='<span class="pill bad">Zuordnung fehlt</span>'; return; }
+  try{
+    const res=await fetch(inst.base_url.replace(/\/$/,'')+'/api/v1/session',
+      {headers:{'Authorization':'Token token='+$(inputId).value.trim()}});
+    el.innerHTML=res.status===200?'<span class="pill ok">gültig</span>'
+      :'<span class="pill bad">'+(res.status===401?'ungültig':'HTTP '+res.status)+'</span>';
+  }catch(e){ el.innerHTML='<span class="pill bad">Netzwerkfehler</span>'; }
+}
+$('testBB').onclick=()=>testTok('breitbild','tokBB','tokBBres');
+$('testK').onclick=()=>testTok('kornflex','tokK','tokKres');
+/* Kürzel-Editor (#3): Zuordnung ohne JSON pflegen */
+const qa=s=>esc(JSON.stringify(String(s)));                  // sicher fürs onclick-Attribut
+function renderMapList(){
+  const el=$('mapList'); if(!el) return;
+  if(!MAPPINGS){ el.textContent='Noch keine Zuordnung geladen.'; return; }
+  let h='<table><thead><tr><th>Kürzel</th><th>Instanz</th><th>Projekt</th><th>+20%</th><th></th></tr></thead><tbody>';
+  for(const ik of Object.keys(MAPPINGS.instances)){
+    const ps=MAPPINGS.instances[ik].projects;
+    Object.keys(ps).sort().forEach(code=>{ const m=ps[code]; if(m.alias) return;
+      const mk=m.markup===true?'ja':(m.markup==='post_only'?'nur Post':'nein');
+      h+='<tr><td><b>'+esc(code)+'</b></td><td>'+ik+'</td><td>'+esc(m.name||m.identifier||m.project_id||'?')+'</td>'+
+        '<td>'+mk+'</td><td><button class="btn ghost sm" aria-label="Kürzel entfernen" '+
+        'onclick="delMap('+qa(ik)+','+qa(code)+')">✕</button></td></tr>'; });
+  }
+  el.innerHTML=h+'</tbody></table>';
+}
+window.delMap=(ik,code)=>{ if(!confirm('Kürzel „'+code+'" entfernen?')) return;
+  delete MAPPINGS.instances[ik].projects[code];
+  localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS)); renderMapList();
+  $('cfgText').value=JSON.stringify(MAPPINGS,null,2);
+  toast('„'+code+'" entfernt – Lesezeichen ggf. neu erzeugen'); };
+$('newProj').addEventListener('focus',()=>{ ensureProjects().catch(()=>{}); });
+$('addMap').onclick=()=>{
+  const code=$('newCode').value.trim(); const t=PROJ_INDEX[$('newProj').value.trim()];
+  if(!code){ toast('Kürzel fehlt'); return; }
+  if(!t){ toast('Projekt aus der Vorschlagsliste wählen'); return; }
+  const p=(ALL_PROJECTS[t.ik]||[]).find(x=>x.id===t.pid)||{};
+  MAPPINGS.instances[t.ik].projects[code]={project_id:t.pid, name:p.name,
+    ...(p.identifier?{identifier:p.identifier}:{}), markup:$('newMk').checked};
+  localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS)); renderMapList();
+  $('cfgText').value=JSON.stringify(MAPPINGS,null,2);
+  $('newCode').value=''; $('newProj').value=''; $('newMk').checked=false;
+  toast('„'+code+'" hinzugefügt – Lesezeichen ggf. neu erzeugen'); };
 $('saveTok').onclick=()=>{ localStorage.setItem(LS.bb,$('tokBB').value.trim()); localStorage.setItem(LS.k,$('tokK').value.trim());
   showBanner(); health(); $('saveTok').textContent='Gespeichert ✓'; setTimeout(()=>$('saveTok').textContent='Tokens speichern',1200); };
 $('saveCfg').onclick=()=>{ try{ MAPPINGS=JSON.parse($('cfgText').value); localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS));
@@ -503,6 +609,14 @@ function loadFile(file){
     $('dropzone').classList.add('hide'); $('planArea').classList.remove('hide');
     $('tableWrap').innerHTML='<div class="pad muted" style="display:flex;align-items:center;gap:10px;font-size:13px"><span class="spin"></span>Plan wird berechnet, Moco wird abgefragt…</div>';
     ROWS=buildPlan(csvGroups(rd.result));
+    if(!ROWS.length){                                        // Spalten nicht erkannt (#5)
+      ROWS=[]; $('planArea').classList.add('hide'); $('dropzone').classList.remove('hide');
+      $('banner').innerHTML='<div class="banner err"><b>CSV nicht erkannt.</b> Erwartet werden die Spalten '+
+        '<code>timeline</code>, <code>start date</code>, <code>duration (minutes)</code> und <code>name</code> '+
+        '(Zeittracking-Export „detailed"). Exporte anderer Tools (Toggl, Clockify …) haben andere Spalten.</div>';
+      return;
+    }
+    $('banner').innerHTML=''; showBanner();
     try{ await resolveIds(ROWS); }catch(e){ console.warn(e); }
     render();
   };
@@ -521,8 +635,10 @@ function render(){
       const s=instSum[inst||'?'];
       html+='<tr class="grp"><td colspan="8">'+(inst||'UNBEKANNT').toUpperCase()+
         (s?'<span class="sub">'+s.toFixed(2)+' h ausgewählt</span>':'')+'</td></tr>'; }
-    const booked=r.hours_booked.toFixed(2)+
-      ' <span class="mk'+(r.markup?' on':'')+'" title="+20% Aufschlag an/aus" onclick="toggleMk('+i+')">+20%</span>';
+    const booked='<span><input class="hrs" type="text" inputmode="decimal" aria-label="Gebuchte Stunden" value="'+r.hours_booked.toFixed(2)+'" onchange="setHours('+i+',this.value)">'+
+      ' <span class="mk'+(r.markup?' on':'')+'" role="button" tabindex="0" title="+20% Aufschlag an/aus" onclick="toggleMk('+i+')">+20%</span></span>';
+    const diff=(r.existing && r.status==='CHECK_DUPLICATE') ? round2(r.hours_booked-r.existing.hours) : 0;
+    const diffBtn=diff>0.01 ? '<div style="margin-top:5px"><button class="btn ghost sm" onclick="bookDiff('+i+')">Nur Differenz buchen ('+diff.toFixed(2)+' h)</button></div>' : '';
     const nm=r.project||r.csv_code;
     const av='<div class="av" style="background:'+avatarColor(nm)+'">'+esc(initials(nm))+'</div>';
     let projCell;
@@ -540,12 +656,14 @@ function render(){
     } else taskCell='<input type="text" value="'+esc(r.task||'')+'" onchange="setTaskName('+i+',this.value)">';
     const merken = (r.adhoc&&r.project_id&&r.task_id)
       ? ' <button class="btn ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
-    html+='<tr'+(r.skip?' class="rowoff"':'')+'><td>'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
-      '<td>'+taskCell+merken+(r.review?'<div class="review">'+esc(r.review)+'</div>':'')+'</td>'+
-      '<td><input type="text" class="desc" value="'+esc(r.description||'')+'" placeholder="Beschrieb…" onchange="ROWS['+i+'].description=this.value;savePlan()"></td>'+
-      '<td class="num">'+r.hours_effective.toFixed(2)+'</td><td class="num">'+booked+'</td>'+
-      '<td><span class="badge '+r.status+'">'+(SL[r.status]||r.status)+'</span></td>'+
-      '<td><input type="checkbox" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;render()"></td></tr>';
+    html+='<tr'+(r.skip?' class="rowoff"':'')+'>'+
+      '<td data-l="Datum">'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
+      '<td data-l="Task">'+taskCell+merken+(r.review?'<div class="review">'+esc(r.review)+'</div>':'')+diffBtn+'</td>'+
+      '<td data-l="Beschrieb"><input type="text" class="desc" aria-label="Beschrieb" value="'+esc(r.description||'')+'" placeholder="Beschrieb…" onchange="ROWS['+i+'].description=this.value;savePlan()"></td>'+
+      '<td class="num" data-l="Eff h">'+r.hours_effective.toFixed(2)+'</td>'+
+      '<td class="num" data-l="Gebucht">'+booked+'</td>'+
+      '<td data-l="Status"><span class="badge '+r.status+'" id="st'+i+'">'+(SL[r.status]||r.status)+'</span></td>'+
+      '<td data-l="Buchen"><input type="checkbox" aria-label="Diesen Eintrag buchen" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;render()"></td></tr>';
   });
   html+='</tbody></table>'; $('tableWrap').innerHTML=html; summarize(); savePlan();
 }
@@ -565,7 +683,15 @@ function projectDatalist(){  // suchbare Projektliste (Name, P-Code UND Kunde du
       opts+='<option value="'+esc(v)+'">'+tag[ik]+'</option>';
     });
   }
-  return '<datalist id="projlist">'+opts+'</datalist>';
+  const h=$('dlhost'); if(h) h.innerHTML='<datalist id="projlist">'+opts+'</datalist>';
+  return '';
+}
+async function ensureProjects(){  // Projektlisten laden, falls noch leer (für Editor vor dem ersten CSV)
+  if(Object.keys(PROJ_INDEX).length) return;
+  for(const ik of Object.keys(MAPPINGS.instances)){
+    if(!(ALL_PROJECTS[ik]||[]).length) ALL_PROJECTS[ik]=await fetchAllProjects(ik);
+  }
+  projectDatalist();
 }
 function projDisplayFor(r){  // Rückwärts: Anzeige-Text zum aktuell gewählten Projekt
   if(!r.project_id) return '';
@@ -601,8 +727,17 @@ window.pickProjectByName=(i,val)=>{
   const t=PROJ_INDEX[v]; if(!t){ render(); return; }  // kein gültiges Projekt gewählt
   applyProject(i, t.ik, t.pid);
 };
-window.toggleMk=(i)=>{ const r=ROWS[i]; r.markup=!r.markup; r.markup_manual=true;
-  r.hours_booked=round2(r.hours_effective*(r.markup?1.2:1.0)); render(); };
+window.toggleMk=(i)=>{ const r=ROWS[i]; r.markup=!r.markup; r.markup_manual=true; r.hours_manual=false;
+  recomputeMoney(r); render(); };
+window.setHours=(i,v)=>{ const r=ROWS[i]; const x=parseFloat(String(v).replace(',','.'));
+  if(isFinite(x)&&x>0){ r.hours_booked=round2(x); r.hours_manual=true; }
+  render(); };
+window.bookDiff=(i)=>{ const r=ROWS[i]; if(!r.existing) return;
+  const d=round2(r.hours_booked-r.existing.hours);
+  if(d<=0.01){ toast('Bereits vollständig gebucht'); return; }
+  r.hours_booked=d; r.hours_manual=true; r.skip=false; r.status='PLANNED';
+  r.review='Ergänzt nur die Differenz zu bestehenden '+r.existing.hours.toFixed(2)+' h.';
+  render(); };
 window.mergeMapping=(i)=>{ const r=ROWS[i]; if(!r.instance||!r.project_id) return;
   MAPPINGS.instances[r.instance].projects[r.csv_code]={project_id:r.project_id,name:r.project,markup:!!r.markup};
   localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS)); r.adhoc=false; render();
@@ -628,6 +763,7 @@ function summarize(){
 function savePlan(){ try{ localStorage.setItem(PLAN_LS, JSON.stringify({rows:ROWS})); }catch(e){} }
 window.savePlan=savePlan;
 function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  t.setAttribute('role','status'); t.setAttribute('aria-live','polite');
   document.body.appendChild(t); setTimeout(()=>t.remove(), 3400); }
 function updateUndo(){ const b=$('undoBtn'); if(!b) return;
   b.style.display=LAST_BOOKING.length?'':'none'; b.textContent='Letzte Buchung rückgängig ('+LAST_BOOKING.length+')'; }
@@ -644,14 +780,24 @@ function restorePlan(){
   }catch(e){ return false; }
 }
 
+function saveUndo(){ try{ localStorage.setItem('moco_undo', JSON.stringify(LAST_BOOKING)); }catch(e){} }
 $('commitBtn').onclick=async ()=>{ const btn=$('commitBtn'); btn.disabled=true; $('commitInfo').textContent='Buche…';
-  const res=await bookRows(ROWS);
+  const res=await bookRows(ROWS, (done,total,i,ok)=>{        // Live-Fortschritt (#1)
+    btn.textContent='Buche… '+done+'/'+total;
+    $('commitInfo').textContent='Buche… '+done+'/'+total;
+    const s=document.getElementById('st'+i);
+    if(s){ s.className='badge '+(ok?'BOOKED':'fail'); s.textContent=ok?SL.BOOKED:SL.fail; }
+  });
   res.results.forEach((x,i)=>{ if(!x) return;
     if(x.result==='ok'){ ROWS[i].status='BOOKED'; ROWS[i].skip=true; ROWS[i].review='gebucht, id '+x.id; }
     else if(x.result==='exists'){ ROWS[i].status='BOOKED'; ROWS[i].skip=true; ROWS[i].review='war schon gebucht – übersprungen'; }
     else if(x.result==='fail'){ ROWS[i].status='fail'; ROWS[i].review=x.msg; } });
-  LAST_BOOKING=res.created||[]; updateUndo(); render();
-  $('commitInfo').textContent=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen'+(LAST_BOOKING.length?' · rückgängig möglich':'')+'.';
+  LAST_BOOKING=res.created||[]; saveUndo(); updateUndo(); render();
+  const insts=[...new Set((res.created||[]).map(c=>c.instance))];
+  const links=insts.map(ik=>'<a href="'+instCfg(ik).base_url+'/activities" target="_blank" rel="noopener">'+
+    (ik==='breitbild'?'Breitbild':'Kornflex')+' öffnen</a>').join(' · ');
+  $('commitInfo').innerHTML=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen'+
+    (LAST_BOOKING.length?' · rückgängig möglich':'')+'.'+(links?' &nbsp;'+links:'');
   toast(res.failed ? res.booked+' gebucht, '+res.failed+' fehlgeschlagen – Details in der Tabelle'
                    : (res.booked ? '✓ '+res.booked+(res.booked===1?' Eintrag':' Einträge')+' gebucht' : 'Nichts gebucht'));
   summarize(); };
@@ -659,7 +805,7 @@ $('undoBtn').onclick=async ()=>{ if(!LAST_BOOKING.length) return; const b=$('und
   let ok=0,fail=0;
   for(const c of LAST_BOOKING){ const {status}=await moco(c.instance,'DELETE','/api/v1/activities/'+c.id);
     if(status===200||status===204){ ok++; const r=ROWS[c.i]; if(r){ r.status='PLANNED'; r.skip=false; r.review=null; } } else fail++; }
-  LAST_BOOKING=[]; updateUndo(); render();
+  LAST_BOOKING=[]; saveUndo(); updateUndo(); render();
   $('commitInfo').textContent=ok+' zurückgenommen'+(fail?(', '+fail+' fehlgeschlagen'):'')+'.'; b.disabled=false; };
 $('resetBtn').onclick=()=>{
   if(ROWS.length && ROWS.some(r=>!r.skip) && !confirm('Aktuellen Plan verwerfen und neue CSV laden?')) return;
@@ -667,8 +813,16 @@ $('resetBtn').onclick=()=>{
   $('planArea').classList.add('hide'); $('stats').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value='';
   showBanner(); };
 
+/* ¼-h-Rundung (#4) */
+function rndLabel(){ $('rndBtn').textContent='¼-h-Rundung: '+(roundOn()?'an':'aus'); }
+$('rndBtn').onclick=()=>{ try{ localStorage.setItem(RND_LS, roundOn()?'0':'1'); }catch(e){}
+  ROWS.forEach(r=>recomputeMoney(r)); rndLabel(); render();
+  toast(roundOn()?'Stunden werden auf ¼ h gerundet':'Rundung aus – exakte Stunden'); };
+
 /* init */
-showBanner(); health();
+showBanner(); health(); rndLabel();
+try{ LAST_BOOKING=JSON.parse(localStorage.getItem('moco_undo')||'[]')||[]; }catch(e){ LAST_BOOKING=[]; }
+updateUndo();
 if(!MAPPINGS) $('settings').classList.remove('hide');
 if(MAPPINGS) restorePlan();
 </script>
