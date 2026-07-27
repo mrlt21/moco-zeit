@@ -156,7 +156,8 @@
       letter-spacing:.05em; color:var(--muted); font-weight:600; flex:none; }
     .grp td{ background:transparent; padding:12px 2px 4px; display:block; }
     .cli{ max-width:none; flex-wrap:wrap; width:100%; }
-    .cli>div{ flex:1 1 auto; min-width:0; }
+    .cli>div:not(.av){ flex:1 1 auto; min-width:0; }
+    .cli .av{ flex:0 0 30px; width:30px; height:30px; }
     .review{ width:100%; max-width:none; text-align:left; }
     select,input[type=text]{ max-width:58vw; }
     .desc{ width:58vw; max-width:58vw; }
