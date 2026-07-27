@@ -301,6 +301,17 @@ async function moco(ik, method, path, body){
     return {status:res.status, data};
   }catch(e){ return {status:-1, data:{error:String(e)}}; }
 }
+async function fetchAllProjects(ik){  // Moco liefert max. 100 pro Seite -> alle Seiten holen
+  let all=[], page=1;
+  while(page<=25){
+    const {status,data}=await moco(ik,'GET','/api/v1/projects?status=active&per_page=100&page='+page);
+    if(status!==200||!Array.isArray(data)||!data.length) break;
+    all=all.concat(data);
+    if(data.length<100) break;
+    page++;
+  }
+  return all;
+}
 
 async function resolveIds(rows){
   const taskCache={}, actCache={}, meId={};
@@ -309,10 +320,10 @@ async function resolveIds(rows){
     const {status,data}=await moco(ik,'GET','/api/v1/session');
     meId[ik]=(status===200&&data)?data.id:null;
   }
-  // Alle Projekte beider Instanzen laden (Dropdown bei unbekannten Kürzeln + identifier-Auflösung)
+  // Alle Projekte beider Instanzen frisch + paginiert laden (auch neue Projekte, auch >100)
+  ALL_PROJECTS={};
   for(const ik of Object.keys(MAPPINGS.instances)){
-    if(!ALL_PROJECTS[ik]){ const {status,data}=await moco(ik,'GET','/api/v1/projects?status=active&limit=200');
-      ALL_PROJECTS[ik]=(status===200&&Array.isArray(data))?data:[]; }
+    ALL_PROJECTS[ik]=await fetchAllProjects(ik);
   }
   const idMap={}; for(const ik of Object.keys(ALL_PROJECTS)){ idMap[ik]={};
     (ALL_PROJECTS[ik]||[]).forEach(p=>{ if(p.identifier) idMap[ik][p.identifier]=p.id; }); }
