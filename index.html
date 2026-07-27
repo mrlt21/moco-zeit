@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://breitbild.mocoapp.com https://kornflex.mocoapp.com; img-src data:; base-uri 'none'; form-action 'none'">
 <title>Moco Zeiterfassung</title>
 <style>
   :root{ --bg:#f3f4f6; --panel:#fff; --line:#ececef; --txt:#1b1f24; --muted:#9097a1;
@@ -154,6 +155,7 @@
     <div class="card table-card"><div id="tableWrap"></div></div>
     <div class="actionbar">
       <button class="btn green" id="commitBtn">Ausgewählte buchen</button>
+      <button class="btn ghost" id="undoBtn" style="display:none">Letzte Buchung rückgängig</button>
       <button class="btn ghost" id="resetBtn">Andere CSV laden</button>
       <span class="muted" id="commitInfo"></span>
     </div>
@@ -181,6 +183,7 @@ function instCfg(key){ return MAPPINGS.instances[key]; }
 let ALL_PROJECTS={};  // {breitbild:[...], kornflex:[...]} – für Dropdown bei unbekannten Kürzeln
 
 /* ---------- Plan-Logik (Port aus moco_import.py) ---------- */
+/*==LOGIC_START==*/
 function normTask(s){ s=(s||'').replace(/^\s*\d+[.)]?\s*/,''); return s.replace(/\s+/g,' ').trim().toLowerCase(); }
 function matchTask(tasks, wantName){
   const want=normTask(wantName); if(!want||!tasks) return null;
@@ -288,18 +291,33 @@ function buildPlan(groups){
   rows.sort((a,b)=>(a.instance||'zzz').localeCompare(b.instance||'zzz')||a.date.localeCompare(b.date)||(a.csv_code||'').localeCompare(b.csv_code||''));
   return rows;
 }
+/*==LOGIC_END==*/
 
 /* ---------- Moco API (direkt aus dem Browser) ---------- */
-async function moco(ik, method, path, body){
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function pMap(items, fn, limit=4){  // parallel mit Obergrenze
+  const res=new Array(items.length); let i=0;
+  const worker=async()=>{ while(i<items.length){ const idx=i++; res[idx]=await fn(items[idx],idx); } };
+  await Promise.all(Array.from({length:Math.max(1,Math.min(limit,items.length))},worker));
+  return res;
+}
+async function moco(ik, method, path, body, _try){
   const inst=instCfg(ik); const tok=tokens()[ik];
   if(!tok) return {status:0, data:{error:'kein Token'}};
+  const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(), 25000);
   try{
-    const res=await fetch(inst.base_url.replace(/\/$/,'')+path,{method,
+    const res=await fetch(inst.base_url.replace(/\/$/,'')+path,{method, signal:ctrl.signal,
       headers:{'Authorization':'Token token='+tok, ...(body?{'Content-Type':'application/json'}:{})},
       body: body?JSON.stringify(body):undefined});
+    clearTimeout(to);
     let data=null; const t=await res.text(); try{ data=t?JSON.parse(t):null; }catch(e){ data=t; }
+    // Retry nur für GET bei transienten Fehlern (429 / 5xx). POST nie automatisch wiederholen.
+    if(method==='GET' && (res.status===429||res.status>=500) && (_try||0)<2){
+      await sleep(400*((_try||0)+1)); return moco(ik,method,path,body,(_try||0)+1); }
     return {status:res.status, data};
-  }catch(e){ return {status:-1, data:{error:String(e)}}; }
+  }catch(e){ clearTimeout(to);
+    if(method==='GET' && (_try||0)<2){ await sleep(400*((_try||0)+1)); return moco(ik,method,path,body,(_try||0)+1); }
+    return {status:-1, data:{error:String(e)}}; }
 }
 async function fetchAllProjects(ik){  // Moco liefert max. 100 pro Seite -> alle Seiten holen
   let all=[], page=1;
@@ -314,46 +332,50 @@ async function fetchAllProjects(ik){  // Moco liefert max. 100 pro Seite -> alle
 }
 
 async function resolveIds(rows){
-  const taskCache={}, actCache={}, meId={};
-  // Aktueller Benutzer pro Instanz (Dublettencheck nur gegen EIGENE Einträge, nicht das ganze Team)
-  for(const ik of Object.keys(MAPPINGS.instances)){
-    const {status,data}=await moco(ik,'GET','/api/v1/session');
-    meId[ik]=(status===200&&data)?data.id:null;
-  }
-  // Alle Projekte beider Instanzen frisch + paginiert laden (auch neue Projekte, auch >100)
-  ALL_PROJECTS={};
-  for(const ik of Object.keys(MAPPINGS.instances)){
+  const insts=Object.keys(MAPPINGS.instances); const meId={}; ALL_PROJECTS={};
+  // Session (eigene user_id) + alle Projekte je Instanz – Instanzen parallel
+  await Promise.all(insts.map(async ik=>{
+    const s=await moco(ik,'GET','/api/v1/session'); meId[ik]=(s.status===200&&s.data)?s.data.id:null;
     ALL_PROJECTS[ik]=await fetchAllProjects(ik);
-  }
-  const idMap={}; for(const ik of Object.keys(ALL_PROJECTS)){ idMap[ik]={};
-    (ALL_PROJECTS[ik]||[]).forEach(p=>{ if(p.identifier) idMap[ik][p.identifier]=p.id; }); }
-  for(const r of rows){
-    const ik=r.instance; if(!ik) continue;
-    if(!r.project_id && r.identifier){
-      r.project_id=(idMap[ik]||{})[r.identifier]||null;
-      if(!r.project_id){ r.status='NEEDS_REVIEW'; r.review='project_id für '+r.identifier+' nicht gefunden (evtl. archiviert).'; r.skip=true; }
+  }));
+  const idMap={}; insts.forEach(ik=>{ idMap[ik]={};
+    (ALL_PROJECTS[ik]||[]).forEach(p=>{ if(p.identifier) idMap[ik][p.identifier]=p.id; }); });
+  // project_id auflösen (synchron)
+  rows.forEach(r=>{ if(r.instance && !r.project_id && r.identifier){
+    r.project_id=(idMap[r.instance]||{})[r.identifier]||null;
+    if(!r.project_id){ r.status='NEEDS_REVIEW'; r.review='project_id für '+r.identifier+' nicht gefunden (evtl. archiviert).'; r.skip=true; } }});
+  // Tasks je eindeutigem Projekt – parallel
+  const projKeys=[...new Set(rows.filter(r=>r.project_id).map(r=>r.instance+'|'+r.project_id))];
+  const taskMap={};
+  await pMap(projKeys, async k=>{ const [ik,pid]=k.split('|');
+    const {status,data}=await moco(ik,'GET','/api/v1/projects/'+pid+'/tasks');
+    taskMap[k]=(status===200&&Array.isArray(data))?data:[]; }, 5);
+  // Eigene Aktivitäten EINMAL pro Instanz über den ganzen Datumsbereich
+  const actIndex={};  // ik|pid|date -> [activities]
+  await Promise.all(insts.map(async ik=>{
+    const ds=rows.filter(r=>r.instance===ik && r.project_id).map(r=>r.date); if(!ds.length) return;
+    const from=ds.reduce((a,b)=>a<b?a:b), to=ds.reduce((a,b)=>a>b?a:b), uid=meId[ik];
+    const {status,data}=await moco(ik,'GET','/api/v1/activities?from='+from+'&to='+to+(uid?('&user_id='+uid):''));
+    if(status===200&&Array.isArray(data)) data.forEach(a=>{ if(uid&&(a.user||{}).id!==uid) return;
+      const key=ik+'|'+((a.project||{}).id)+'|'+a.date; (actIndex[key]=actIndex[key]||[]).push(a); });
+  }));
+  // Zuordnen: Task-Match + Dublettencheck (synchron)
+  rows.forEach(r=>{
+    if(!r.project_id) return;
+    const tk=taskMap[r.instance+'|'+r.project_id]||[];
+    r.available_tasks=tk.map(t=>({id:t.id,name:t.name||''}));
+    if(r.task && !r.task_id){
+      const m=matchTask(tk, r.task);
+      if(m){ r.task_id=m.id; r.task=m.name; }
+      else { r.status='NEEDS_REVIEW'; r.review="Task '"+r.task+"' im Projekt nicht gefunden."; r.skip=true; }
     }
-    if(r.project_id){
-      const ck=ik+'|'+r.project_id;
-      if(!taskCache[ck]){ const {status,data}=await moco(ik,'GET','/api/v1/projects/'+r.project_id+'/tasks');
-        taskCache[ck]=(status===200&&Array.isArray(data))?data:[]; }
-      r.available_tasks=taskCache[ck].map(t=>({id:t.id,name:t.name||''}));
-      if(r.task && !r.task_id){
-        const m=matchTask(taskCache[ck], r.task);
-        if(m){ r.task_id=m.id; r.task=m.name; }
-        else { r.status='NEEDS_REVIEW'; r.review="Task '"+r.task+"' im Projekt nicht gefunden."; r.skip=true; }
-      }
-      const ek=ik+'|'+r.date; const uid=meId[ik];
-      if(!actCache[ek]){ const q='/api/v1/activities?from='+r.date+'&to='+r.date+(uid?('&user_id='+uid):'');
-        const {status,data}=await moco(ik,'GET',q); actCache[ek]=(status===200&&Array.isArray(data))?data:[]; }
-      const same=actCache[ek].filter(a=>(a.project||{}).id===r.project_id && (!uid || (a.user||{}).id===uid));
-      if(same.length){ const tot=round2(same.reduce((s,a)=>s+parseFloat(a.hours||0),0));
-        const ts=[...new Set(same.map(a=>(a.task||{}).name||'?'))].join(', ');
-        r.existing={count:same.length,hours:tot,tasks:ts};
-        if(r.status==='PLANNED'){ r.status='CHECK_DUPLICATE';
-          r.review='Bereits '+tot+'h auf diesem Projekt am '+r.date+' (Tasks: '+ts+'). Prüfen, ggf. abwählen.'; } }
-    }
-  }
+    const same=actIndex[r.instance+'|'+r.project_id+'|'+r.date]||[];
+    if(same.length){ const tot=round2(same.reduce((s,a)=>s+parseFloat(a.hours||0),0));
+      const ts=[...new Set(same.map(a=>(a.task||{}).name||'?'))].join(', ');
+      r.existing={count:same.length,hours:tot,tasks:ts};
+      if(r.status==='PLANNED'){ r.status='CHECK_DUPLICATE';
+        r.review='Bereits '+tot+'h auf diesem Projekt am '+r.date+' (Tasks: '+ts+'). Prüfen, ggf. abwählen.'; } }
+  });
   return rows;
 }
 
@@ -364,21 +386,49 @@ function recomputeMoney(r){
   else { factor=r.markup?1.2:1.0; }                          // Ad-hoc-Projekt ohne Regel
   r.hours_booked=round2(r.hours_effective*factor);
 }
+function friendlyError(status, data){
+  const msg=(data&&data.message)?data.message:(typeof data==='string'?data:'');
+  if(status===422 && /contract/i.test(msg)) return 'Nicht Projektmitglied (kein Vertrag) – in Moco eintragen.';
+  if(status===422) return 'Abgelehnt (422)'+(msg?(': '+msg):' – Projekt evtl. inaktiv.');
+  if(status===404) return 'Projekt/Task nicht gefunden (404).';
+  if(status===401||status===403) return 'Token ungültig ('+status+').';
+  if(status===429) return 'Zu viele Anfragen (429) – kurz warten.';
+  if(!status||status<0) return 'Netzwerkfehler/Timeout.';
+  return 'HTTP '+status+(msg?(': '+msg):'');
+}
 async function bookRows(rows){
-  let booked=0,failed=0,skipped=0; const results=[];
-  for(const r of rows){ recomputeMoney(r);
-    if(r.skip){ skipped++; results.push({result:'skipped'}); continue; }
-    if(!(r.project_id&&r.task_id)){ skipped++; results.push({result:'skipped',msg:'unvollständig'}); continue; }
+  let booked=0,failed=0,skipped=0; const results=new Array(rows.length); const created=[];
+  const toBook=rows.map((r,i)=>({r,i})).filter(o=>!o.r.skip && o.r.project_id && o.r.task_id);
+  // Idempotenz: frische EIGENE Einträge pro Instanz über den Buchungsbereich holen
+  const seen={};  // ik|pid|taskid|date -> [hours]
+  await Promise.all([...new Set(toBook.map(o=>o.r.instance))].map(async ik=>{
+    const ds=toBook.filter(o=>o.r.instance===ik).map(o=>o.r.date); if(!ds.length) return;
+    const from=ds.reduce((a,b)=>a<b?a:b), to=ds.reduce((a,b)=>a>b?a:b);
+    const s=await moco(ik,'GET','/api/v1/session'); const uid=(s.status===200&&s.data)?s.data.id:null;
+    const {status,data}=await moco(ik,'GET','/api/v1/activities?from='+from+'&to='+to+(uid?('&user_id='+uid):''));
+    if(status===200&&Array.isArray(data)) data.forEach(a=>{ if(uid&&(a.user||{}).id!==uid) return;
+      const key=ik+'|'+((a.project||{}).id)+'|'+((a.task||{}).id)+'|'+a.date;
+      (seen[key]=seen[key]||[]).push(round2(parseFloat(a.hours||0))); });
+  }));
+  rows.forEach((r,i)=>{ if(r.skip){ results[i]={result:'skipped'}; skipped++; }
+    else if(!(r.project_id&&r.task_id)){ results[i]={result:'skipped',msg:'unvollständig'}; skipped++; } });
+  for(const {r,i} of toBook){
+    recomputeMoney(r); const h=round2(r.hours_booked);
+    const key=r.instance+'|'+r.project_id+'|'+r.task_id+'|'+r.date;
+    if((seen[key]||[]).some(x=>Math.abs(x-h)<0.005)){ results[i]={result:'exists'}; skipped++; continue; }
     const {status,data}=await moco(r.instance,'POST','/api/v1/activities',
-      {date:r.date,project_id:r.project_id,task_id:r.task_id,hours:r.hours_booked,description:r.description||''});
-    if(status===200||status===201){ booked++; results.push({result:'ok',id:(data||{}).id}); }
-    else { failed++; const msg=(data&&data.message)?data.message:JSON.stringify(data); results.push({result:'fail',msg:'HTTP '+status+': '+msg}); }
+      {date:r.date,project_id:r.project_id,task_id:r.task_id,hours:h,description:r.description||''});
+    if(status===200||status===201){ booked++; const id=(data||{}).id;
+      results[i]={result:'ok',id}; created.push({instance:r.instance,id,i}); (seen[key]=seen[key]||[]).push(h); }
+    else { failed++; results[i]={result:'fail',msg:friendlyError(status,data)}; }
   }
-  return {booked,failed,skipped,results};
+  return {booked,failed,skipped,results,created};
 }
 
 /* ---------- UI ---------- */
 let ROWS=[];
+let LAST_BOOKING=[];            // {instance,id,i} der letzten Buchung – für Rückgängig
+const PLAN_LS='moco_plan';      // localStorage-Key für die Plan-Persistenz
 const SL={PLANNED:'buchen',CHECK_DUPLICATE:'Dublette?',NEEDS_REVIEW:'prüfen',BOOKED:'gebucht',fail:'Fehler'};
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=id=>document.getElementById(id);
@@ -464,12 +514,12 @@ function render(){
       ? ' <button class="btn ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
     html+='<tr><td>'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
       '<td>'+taskCell+merken+(r.review?'<div class="review">'+esc(r.review)+'</div>':'')+'</td>'+
-      '<td><input type="text" class="desc" value="'+esc(r.description||'')+'" placeholder="Beschrieb…" onchange="ROWS['+i+'].description=this.value"></td>'+
+      '<td><input type="text" class="desc" value="'+esc(r.description||'')+'" placeholder="Beschrieb…" onchange="ROWS['+i+'].description=this.value;savePlan()"></td>'+
       '<td class="num">'+r.hours_effective.toFixed(2)+'</td><td class="num">'+booked+'</td>'+
       '<td><span class="badge '+r.status+'">'+(SL[r.status]||r.status)+'</span></td>'+
-      '<td><input type="checkbox" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;summarize()"></td></tr>';
+      '<td><input type="checkbox" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;summarize();savePlan()"></td></tr>';
   });
-  html+='</tbody></table>'; $('tableWrap').innerHTML=html; summarize();
+  html+='</tbody></table>'; $('tableWrap').innerHTML=html; summarize(); savePlan();
 }
 window.setTask=(i,sel)=>{ const o=sel.options[sel.selectedIndex]; ROWS[i].task_id=o.value?parseInt(o.value):null;
   ROWS[i].task=o.value?o.text:null; if(o.value){ ROWS[i].skip=false; ROWS[i].status='PLANNED'; ROWS[i].review=null; recomputeMoney(ROWS[i]); } render(); };
@@ -537,16 +587,46 @@ function summarize(){
     card('$','Gebucht', bk.toFixed(2)+' h') +
     card('!','Hinweise', (rev+dup), (dup?' <span class="tag amber">'+dup+' Dublette</span>':'')+(rev?' <span class="tag red">'+rev+' prüfen</span>':''));
 }
+function savePlan(){ try{ localStorage.setItem(PLAN_LS, JSON.stringify({rows:ROWS})); }catch(e){} }
+window.savePlan=savePlan;
+function updateUndo(){ const b=$('undoBtn'); if(!b) return;
+  b.style.display=LAST_BOOKING.length?'':'none'; b.textContent='Letzte Buchung rückgängig ('+LAST_BOOKING.length+')'; }
+function restorePlan(){
+  try{ const p=JSON.parse(localStorage.getItem(PLAN_LS)||'null');
+    if(!p||!Array.isArray(p.rows)||!p.rows.length) return false;
+    ROWS=p.rows; $('dropzone').classList.add('hide'); $('planArea').classList.remove('hide'); render();
+    $('banner').innerHTML='<div class="banner warn">Wiederhergestellter Plan von zuletzt. <b>Andere CSV laden</b> zum Verwerfen.</div>'+$('banner').innerHTML;
+    // Projektlisten im Hintergrund nachladen, damit die Dropdowns funktionieren
+    (async()=>{ try{ ALL_PROJECTS={};
+      await Promise.all(Object.keys(MAPPINGS.instances).map(async ik=>{ ALL_PROJECTS[ik]=await fetchAllProjects(ik); }));
+      render(); }catch(e){} })();
+    return true;
+  }catch(e){ return false; }
+}
+
 $('commitBtn').onclick=async ()=>{ const btn=$('commitBtn'); btn.disabled=true; $('commitInfo').textContent='Buche…';
   const res=await bookRows(ROWS);
-  res.results.forEach((x,i)=>{ if(x.result==='ok'){ ROWS[i].status='BOOKED'; ROWS[i].skip=true; ROWS[i].review='gebucht, id '+x.id; }
+  res.results.forEach((x,i)=>{ if(!x) return;
+    if(x.result==='ok'){ ROWS[i].status='BOOKED'; ROWS[i].skip=true; ROWS[i].review='gebucht, id '+x.id; }
+    else if(x.result==='exists'){ ROWS[i].status='BOOKED'; ROWS[i].skip=true; ROWS[i].review='war schon gebucht – übersprungen'; }
     else if(x.result==='fail'){ ROWS[i].status='fail'; ROWS[i].review=x.msg; } });
-  render(); $('commitInfo').textContent=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen.'; btn.disabled=false; };
-$('resetBtn').onclick=()=>{ ROWS=[]; $('planArea').classList.add('hide'); $('stats').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value=''; };
+  LAST_BOOKING=res.created||[]; updateUndo(); render();
+  $('commitInfo').textContent=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen'+(LAST_BOOKING.length?' · rückgängig möglich':'')+'.';
+  btn.disabled=false; };
+$('undoBtn').onclick=async ()=>{ if(!LAST_BOOKING.length) return; const b=$('undoBtn'); b.disabled=true; b.textContent='Nehme zurück…';
+  let ok=0,fail=0;
+  for(const c of LAST_BOOKING){ const {status}=await moco(c.instance,'DELETE','/api/v1/activities/'+c.id);
+    if(status===200||status===204){ ok++; const r=ROWS[c.i]; if(r){ r.status='PLANNED'; r.skip=false; r.review=null; } } else fail++; }
+  LAST_BOOKING=[]; updateUndo(); render();
+  $('commitInfo').textContent=ok+' zurückgenommen'+(fail?(', '+fail+' fehlgeschlagen'):'')+'.'; b.disabled=false; };
+$('resetBtn').onclick=()=>{ ROWS=[]; LAST_BOOKING=[]; updateUndo(); localStorage.removeItem(PLAN_LS);
+  $('planArea').classList.add('hide'); $('stats').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value='';
+  showBanner(); };
 
 /* init */
 showBanner(); health();
 if(!MAPPINGS) $('settings').classList.remove('hide');
+if(MAPPINGS) restorePlan();
 </script>
 </body>
 </html>
