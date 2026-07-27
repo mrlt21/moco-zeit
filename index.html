@@ -57,7 +57,7 @@
   tbody tr:last-child td{ border-bottom:0; }
   tbody tr:hover td{ background:#fafbfc; }
   td.num{ text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
-  .grp td{ background:#fff; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+  .grp td{ background:#fff; font-size:11px; letter-spacing:.06em;
     color:var(--muted); font-weight:700; padding-top:16px; }
   .cli{ display:flex; align-items:center; gap:9px; max-width:210px; }
   .av{ width:30px; height:30px; border-radius:50%; flex:none; display:flex; align-items:center;
@@ -78,8 +78,8 @@
   .mk.on{ background:var(--greenbg); border-color:transparent; color:var(--green); }
   select,input[type=text],input[type=password],textarea{ background:#fff; color:var(--txt);
     border:1px solid #dfe2e7; border-radius:9px; padding:7px 10px; font:inherit; }
-  select,input[type=text]{ max-width:185px; }
-  td select{ max-width:175px; }
+  select,input[type=text]{ max-width:200px; }
+  td select{ max-width:230px; }
   .projsearch{ margin-top:4px; width:215px; max-width:215px; }
   select:focus,input:focus,textarea:focus{ outline:none; border-color:var(--green);
     box-shadow:0 0 0 3px rgba(22,163,74,.12); }
@@ -151,15 +151,16 @@
       box-shadow:var(--shadow); margin-bottom:10px; padding:10px 13px; }
     tbody tr:hover td{ background:transparent; }
     tbody td{ display:flex; align-items:center; justify-content:space-between; gap:10px;
-      border-bottom:0; padding:4px 0; }
+      flex-wrap:wrap; border-bottom:0; padding:4px 0; }
     td[data-l]::before{ content:attr(data-l); font-size:10.5px; text-transform:uppercase;
       letter-spacing:.05em; color:var(--muted); font-weight:600; flex:none; }
     .grp td{ background:transparent; padding:12px 2px 4px; display:block; }
-    .cli{ max-width:none; }
-    .review{ max-width:none; text-align:right; }
+    .cli{ max-width:none; flex-wrap:wrap; width:100%; }
+    .cli>div{ flex:1 1 auto; min-width:0; }
+    .review{ width:100%; max-width:none; text-align:left; }
     select,input[type=text]{ max-width:58vw; }
     .desc{ width:58vw; max-width:58vw; }
-    .projsearch{ width:58vw; max-width:58vw; }
+    .projsearch{ width:100%; max-width:100%; }
     .row label{ width:100%; }
     .row input[type=password],.row input[type=text]{ width:100% !important; max-width:100% !important; }
     .actionbar{ padding:10px 0; gap:8px; }
@@ -180,8 +181,8 @@
   <!-- Einstellungen -->
   <div id="settings" class="card pad hide">
     <h2>Einstellungen</h2>
-    <div class="row"><label>Token Breitbild</label><input type="password" id="tokBB" placeholder="MOCO_BREITBILD_TOKEN" style="width:340px;max-width:none"><button class="btn ghost sm" id="testBB" type="button">Testen</button><span id="tokBBres"></span></div>
-    <div class="row"><label>Token Kornflex</label><input type="password" id="tokK" placeholder="MOCO_KORNFLEX_TOKEN" style="width:340px;max-width:none"><button class="btn ghost sm" id="testK" type="button">Testen</button><span id="tokKres"></span></div>
+    <div class="row"><label>Token BREITBILD STUDIOS</label><input type="password" id="tokBB" placeholder="MOCO_BREITBILD_TOKEN" style="width:340px;max-width:none"><button class="btn ghost sm" id="testBB" type="button">Testen</button><span id="tokBBres"></span></div>
+    <div class="row"><label>Token kornflex</label><input type="password" id="tokK" placeholder="MOCO_KORNFLEX_TOKEN" style="width:340px;max-width:none"><button class="btn ghost sm" id="testK" type="button">Testen</button><span id="tokKres"></span></div>
     <div class="row"><label></label><span class="muted">Tokens werden nur in diesem Browser gespeichert und gehen ausschließlich direkt an Moco.</span></div>
     <div class="bar"><button class="btn sm" id="saveTok">Tokens speichern</button></div>
     <hr>
@@ -227,7 +228,6 @@
     <div class="actionbar">
       <button class="btn green" id="commitBtn">Ausgewählte buchen</button>
       <button class="btn ghost" id="undoBtn" style="display:none">Letzte Buchung rückgängig</button>
-      <button class="btn ghost" id="rndBtn" title="Gebuchte Stunden auf Viertelstunden runden">¼-h-Rundung: aus</button>
       <button class="btn ghost" id="resetBtn">Andere CSV laden</button>
       <span class="muted" id="commitInfo"></span>
     </div>
@@ -452,8 +452,6 @@ async function resolveIds(rows){
   return rows;
 }
 
-const RND_LS='moco_round';
-const roundOn=()=>{ try{ return localStorage.getItem(RND_LS)==='1'; }catch(e){ return false; } };
 function recomputeMoney(r){
   if(!r.instance || r.hours_manual) return;                  // von Hand gesetzte Stunden nie überschreiben
   const f=findProject(r.csv_code); let factor;
@@ -461,8 +459,6 @@ function recomputeMoney(r){
   else if(f){ factor=markupFactor(instCfg(r.instance),f.meta,r.task); r.markup=factor!==1.0; }
   else { factor=r.markup?1.2:1.0; }                          // Ad-hoc-Projekt ohne Regel
   r.hours_booked=round2(r.hours_effective*factor);
-  if(roundOn() && r.hours_booked>0)                          // optional: auf Viertelstunden runden
-    r.hours_booked=Math.max(0.25, Math.round(r.hours_booked*4)/4);
 }
 function friendlyError(status, data){
   const msg=(data&&data.message)?data.message:(typeof data==='string'?data:'');
@@ -511,6 +507,7 @@ let ROWS=[];
 let LAST_BOOKING=[];            // {instance,id,i} der letzten Buchung – für Rückgängig
 const PLAN_LS='moco_plan';      // localStorage-Key für die Plan-Persistenz
 const SL={PLANNED:'buchen',CHECK_DUPLICATE:'Dublette?',NEEDS_REVIEW:'prüfen',BOOKED:'gebucht',fail:'Fehler'};
+const INAME={breitbild:'BREITBILD STUDIOS',kornflex:'kornflex'};
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=id=>document.getElementById(id);
 const PALETTE=['#ef4444','#a855f7','#0d9488','#15803d','#f59e0b','#64748b','#0ea5e9','#e11d48','#d97706','#7c3aed','#0891b2','#ca8a04'];
@@ -522,7 +519,7 @@ function showBanner(){
   const b=$('banner'); b.innerHTML='';
   if(!MAPPINGS){ b.innerHTML='<div class="banner warn">Noch keine Zuordnungstabelle geladen. Öffne <b>Einstellungen</b> und füge sie ein, oder öffne die App über dein Lesezeichen.</div>'; return; }
   const t=tokens();
-  if(!t.breitbild||!t.kornflex){ b.innerHTML='<div class="banner warn">Token fehlt. Unter <b>Einstellungen</b> Breitbild- und Kornflex-Token eintragen.</div>'; }
+  if(!t.breitbild||!t.kornflex){ b.innerHTML='<div class="banner warn">Token fehlt. Unter <b>Einstellungen</b> die Tokens für BREITBILD STUDIOS und kornflex eintragen.</div>'; }
 }
 async function health(){
   const el=$('health'); if(!MAPPINGS){ el.textContent=''; return; }
@@ -530,7 +527,7 @@ async function health(){
   el.innerHTML='…';
   const a=await moco('breitbild','GET','/api/v1/projects?status=active&limit=1');
   const c=await moco('kornflex','GET','/api/v1/projects?status=active&limit=1');
-  el.innerHTML=mk('Breitbild',a.status)+mk('Kornflex',c.status);
+  el.innerHTML=mk(INAME.breitbild,a.status)+mk(INAME.kornflex,c.status);
 }
 
 /* Settings */
@@ -562,7 +559,7 @@ function renderMapList(){
     const ps=MAPPINGS.instances[ik].projects;
     Object.keys(ps).sort().forEach(code=>{ const m=ps[code]; if(m.alias) return;
       const mk=m.markup===true?'ja':(m.markup==='post_only'?'nur Post':'nein');
-      h+='<tr><td><b>'+esc(code)+'</b></td><td>'+ik+'</td><td>'+esc(m.name||m.identifier||m.project_id||'?')+'</td>'+
+      h+='<tr><td><b>'+esc(code)+'</b></td><td>'+(INAME[ik]||ik)+'</td><td>'+esc(m.name||m.identifier||m.project_id||'?')+'</td>'+
         '<td>'+mk+'</td><td><button class="btn ghost sm" aria-label="Kürzel entfernen" '+
         'onclick="delMap('+qa(ik)+','+qa(code)+')">✕</button></td></tr>'; });
   }
@@ -633,7 +630,7 @@ function render(){
   ROWS.forEach((r,i)=>{
     if(r.instance!==inst){ inst=r.instance;
       const s=instSum[inst||'?'];
-      html+='<tr class="grp"><td colspan="8">'+(inst||'UNBEKANNT').toUpperCase()+
+      html+='<tr class="grp"><td colspan="8">'+(INAME[inst]||'UNBEKANNT')+
         (s?'<span class="sub">'+s.toFixed(2)+' h ausgewählt</span>':'')+'</td></tr>'; }
     const booked='<span><input class="hrs" type="text" inputmode="decimal" aria-label="Gebuchte Stunden" value="'+r.hours_booked.toFixed(2)+'" onchange="setHours('+i+',this.value)">'+
       ' <span class="mk'+(r.markup?' on':'')+'" role="button" tabindex="0" title="+20% Aufschlag an/aus" onclick="toggleMk('+i+')">+20%</span></span>';
@@ -673,7 +670,7 @@ window.setTaskName=(i,v)=>{ ROWS[i].task=v; ROWS[i].task_id=null; };
 
 let PROJ_INDEX={};  // Anzeige-Text -> {ik,pid}
 function projectDatalist(){  // suchbare Projektliste (Name, P-Code UND Kunde durchsuchbar)
-  PROJ_INDEX={}; const tag={breitbild:'Breitbild',kornflex:'Kornflex'}; let opts='';
+  PROJ_INDEX={}; const tag=INAME; let opts='';
   for(const ik of Object.keys(MAPPINGS.instances)){
     (ALL_PROJECTS[ik]||[]).forEach(p=>{
       const cust=(p.customer||{}).name||'';
@@ -795,7 +792,7 @@ $('commitBtn').onclick=async ()=>{ const btn=$('commitBtn'); btn.disabled=true; 
   LAST_BOOKING=res.created||[]; saveUndo(); updateUndo(); render();
   const insts=[...new Set((res.created||[]).map(c=>c.instance))];
   const links=insts.map(ik=>'<a href="'+instCfg(ik).base_url+'/activities" target="_blank" rel="noopener">'+
-    (ik==='breitbild'?'Breitbild':'Kornflex')+' öffnen</a>').join(' · ');
+    (INAME[ik]||ik)+' öffnen</a>').join(' · ');
   $('commitInfo').innerHTML=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen'+
     (LAST_BOOKING.length?' · rückgängig möglich':'')+'.'+(links?' &nbsp;'+links:'');
   toast(res.failed ? res.booked+' gebucht, '+res.failed+' fehlgeschlagen – Details in der Tabelle'
@@ -813,14 +810,8 @@ $('resetBtn').onclick=()=>{
   $('planArea').classList.add('hide'); $('stats').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value='';
   showBanner(); };
 
-/* ¼-h-Rundung (#4) */
-function rndLabel(){ $('rndBtn').textContent='¼-h-Rundung: '+(roundOn()?'an':'aus'); }
-$('rndBtn').onclick=()=>{ try{ localStorage.setItem(RND_LS, roundOn()?'0':'1'); }catch(e){}
-  ROWS.forEach(r=>recomputeMoney(r)); rndLabel(); render();
-  toast(roundOn()?'Stunden werden auf ¼ h gerundet':'Rundung aus – exakte Stunden'); };
-
 /* init */
-showBanner(); health(); rndLabel();
+showBanner(); health();
 try{ LAST_BOOKING=JSON.parse(localStorage.getItem('moco_undo')||'[]')||[]; }catch(e){ LAST_BOOKING=[]; }
 updateUndo();
 if(!MAPPINGS) $('settings').classList.remove('hide');
