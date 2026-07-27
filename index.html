@@ -106,6 +106,25 @@
   hr{ border:0; border-top:1px solid var(--line); margin:18px 0; }
   .linkbox{ word-break:break-all; background:#f7f8fa; border:1px solid var(--line); padding:9px;
     border-radius:9px; font-size:11px; font-family:ui-monospace,monospace; max-height:90px; overflow:auto; color:#555; }
+  /* UX-Feinschliff */
+  thead th{ white-space:nowrap; }
+  .actionbar{ position:sticky; bottom:0; z-index:6; background:rgba(243,244,246,.94);
+    backdrop-filter:blur(8px); border-top:1px solid var(--line); padding:12px 2px;
+    margin:12px -2px 0; }
+  tr.rowoff td{ opacity:.45; }
+  tr.rowoff td:last-child{ opacity:1; }
+  .grp .sub{ float:right; text-transform:none; letter-spacing:0; color:#5b626d;
+    font-variant-numeric:tabular-nums; }
+  .spin{ width:16px; height:16px; border:2px solid var(--line); border-top-color:var(--green);
+    border-radius:50%; display:inline-block; animation:sp .8s linear infinite; vertical-align:-3px; }
+  @keyframes sp{ to{ transform:rotate(360deg); } }
+  .toast{ position:fixed; bottom:26px; left:50%; transform:translateX(-50%); background:var(--txt);
+    color:#fff; padding:11px 20px; border-radius:12px; font-size:13px; font-weight:600; z-index:60;
+    box-shadow:0 10px 30px -10px rgba(16,24,40,.5); animation:toastin .25s ease; }
+  @keyframes toastin{ from{ opacity:0; transform:translate(-50%,8px); } to{ opacity:1; transform:translate(-50%,0); } }
+  .drop-ico{ width:46px; height:46px; margin:0 auto 12px; border-radius:13px; background:var(--greenbg);
+    color:var(--green); display:flex; align-items:center; justify-content:center; }
+  .drop-ico svg{ width:22px; height:22px; }
   @media(max-width:760px){ .stats{ grid-template-columns:repeat(2,1fr); } }
 </style>
 </head>
@@ -147,6 +166,7 @@
 
   <!-- CSV / Plan -->
   <div id="dropzone" class="drop">
+    <div class="drop-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg></div>
     <strong>CSV hierher ziehen</strong> oder klicken<br>
     <span style="font-size:12px">Zeittracking-Export (export_…detailed.csv)</span>
     <input id="file" type="file" accept=".csv" class="hide">
@@ -285,6 +305,7 @@ function buildPlan(groups){
         hours_effective:hours,hours_booked:round2(hours*f),markup:f!==1.0,
         description:desc||(realTask||''),status:'PLANNED',skip:false};
       if(!realTask){ row.status='NEEDS_REVIEW'; row.review="Tätigkeit '"+desc+"' passt auf keinen Task – Task wählen."; row.skip=true; }
+      if(hours<0.03){ row.skip=true; row.review=(row.review?row.review+' ':'')+'Unter 2 Minuten – vermutlich Fehlstart, abgewählt.'; }
       if(meta.note) row.note=meta.note;
       rows.push(row);
     }
@@ -480,7 +501,7 @@ function loadFile(file){
   const rd=new FileReader();
   rd.onload=async ()=>{
     $('dropzone').classList.add('hide'); $('planArea').classList.remove('hide');
-    $('tableWrap').innerHTML='<div class="pad muted">Plan wird berechnet, Moco wird abgefragt…</div>';
+    $('tableWrap').innerHTML='<div class="pad muted" style="display:flex;align-items:center;gap:10px;font-size:13px"><span class="spin"></span>Plan wird berechnet, Moco wird abgefragt…</div>';
     ROWS=buildPlan(csvGroups(rd.result));
     try{ await resolveIds(ROWS); }catch(e){ console.warn(e); }
     render();
@@ -489,12 +510,17 @@ function loadFile(file){
 }
 
 function render(){
+  const instSum={};
+  ROWS.filter(r=>!r.skip).forEach(r=>{ const k=r.instance||'?'; instSum[k]=(instSum[k]||0)+r.hours_booked; });
   let html=projectDatalist()+
     '<table><thead><tr><th>Datum</th><th>Projekt</th><th>Task</th><th>Beschrieb</th>'+
     '<th class="num">Eff h</th><th class="num">Gebucht</th><th>Status</th><th>Buchen</th></tr></thead><tbody>';
   let inst=null;
   ROWS.forEach((r,i)=>{
-    if(r.instance!==inst){ inst=r.instance; html+='<tr class="grp"><td colspan="8">'+(inst||'UNBEKANNT').toUpperCase()+'</td></tr>'; }
+    if(r.instance!==inst){ inst=r.instance;
+      const s=instSum[inst||'?'];
+      html+='<tr class="grp"><td colspan="8">'+(inst||'UNBEKANNT').toUpperCase()+
+        (s?'<span class="sub">'+s.toFixed(2)+' h ausgewählt</span>':'')+'</td></tr>'; }
     const booked=r.hours_booked.toFixed(2)+
       ' <span class="mk'+(r.markup?' on':'')+'" title="+20% Aufschlag an/aus" onclick="toggleMk('+i+')">+20%</span>';
     const nm=r.project||r.csv_code;
@@ -514,12 +540,12 @@ function render(){
     } else taskCell='<input type="text" value="'+esc(r.task||'')+'" onchange="setTaskName('+i+',this.value)">';
     const merken = (r.adhoc&&r.project_id&&r.task_id)
       ? ' <button class="btn ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
-    html+='<tr><td>'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
+    html+='<tr'+(r.skip?' class="rowoff"':'')+'><td>'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
       '<td>'+taskCell+merken+(r.review?'<div class="review">'+esc(r.review)+'</div>':'')+'</td>'+
       '<td><input type="text" class="desc" value="'+esc(r.description||'')+'" placeholder="Beschrieb…" onchange="ROWS['+i+'].description=this.value;savePlan()"></td>'+
       '<td class="num">'+r.hours_effective.toFixed(2)+'</td><td class="num">'+booked+'</td>'+
       '<td><span class="badge '+r.status+'">'+(SL[r.status]||r.status)+'</span></td>'+
-      '<td><input type="checkbox" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;summarize();savePlan()"></td></tr>';
+      '<td><input type="checkbox" '+(r.skip?'':'checked')+' onchange="ROWS['+i+'].skip=!this.checked;render()"></td></tr>';
   });
   html+='</tbody></table>'; $('tableWrap').innerHTML=html; summarize(); savePlan();
 }
@@ -580,7 +606,7 @@ window.toggleMk=(i)=>{ const r=ROWS[i]; r.markup=!r.markup; r.markup_manual=true
 window.mergeMapping=(i)=>{ const r=ROWS[i]; if(!r.instance||!r.project_id) return;
   MAPPINGS.instances[r.instance].projects[r.csv_code]={project_id:r.project_id,name:r.project,markup:!!r.markup};
   localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS)); r.adhoc=false; render();
-  alert('„'+r.csv_code+'" gemerkt. Für andere Geräte: Einstellungen → „Lesezeichen-Link erzeugen" und das Lesezeichen aktualisieren.'); };
+  toast('„'+r.csv_code+'" gemerkt · für andere Geräte das Lesezeichen neu erzeugen'); };
 window.summarize=summarize;
 function summarize(){
   const sel=ROWS.filter(r=>!r.skip); const eff=sel.reduce((a,r)=>a+r.hours_effective,0);
@@ -595,9 +621,14 @@ function summarize(){
     card('◷','Effektiv', eff.toFixed(2)+' h') +
     card('$','Gebucht', bk.toFixed(2)+' h') +
     card('!','Hinweise', (rev+dup), (dup?' <span class="tag amber">'+dup+' Dublette</span>':'')+(rev?' <span class="tag red">'+rev+' prüfen</span>':''));
+  const cb=$('commitBtn');
+  if(cb){ cb.textContent = sel.length ? (sel.length+(sel.length===1?' Eintrag':' Einträge')+' buchen · '+bk.toFixed(2)+' h') : 'Nichts ausgewählt';
+    cb.disabled = sel.length===0; }
 }
 function savePlan(){ try{ localStorage.setItem(PLAN_LS, JSON.stringify({rows:ROWS})); }catch(e){} }
 window.savePlan=savePlan;
+function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(), 3400); }
 function updateUndo(){ const b=$('undoBtn'); if(!b) return;
   b.style.display=LAST_BOOKING.length?'':'none'; b.textContent='Letzte Buchung rückgängig ('+LAST_BOOKING.length+')'; }
 function restorePlan(){
@@ -621,14 +652,18 @@ $('commitBtn').onclick=async ()=>{ const btn=$('commitBtn'); btn.disabled=true; 
     else if(x.result==='fail'){ ROWS[i].status='fail'; ROWS[i].review=x.msg; } });
   LAST_BOOKING=res.created||[]; updateUndo(); render();
   $('commitInfo').textContent=res.booked+' gebucht, '+res.failed+' fehlgeschlagen, '+res.skipped+' übersprungen'+(LAST_BOOKING.length?' · rückgängig möglich':'')+'.';
-  btn.disabled=false; };
+  toast(res.failed ? res.booked+' gebucht, '+res.failed+' fehlgeschlagen – Details in der Tabelle'
+                   : (res.booked ? '✓ '+res.booked+(res.booked===1?' Eintrag':' Einträge')+' gebucht' : 'Nichts gebucht'));
+  summarize(); };
 $('undoBtn').onclick=async ()=>{ if(!LAST_BOOKING.length) return; const b=$('undoBtn'); b.disabled=true; b.textContent='Nehme zurück…';
   let ok=0,fail=0;
   for(const c of LAST_BOOKING){ const {status}=await moco(c.instance,'DELETE','/api/v1/activities/'+c.id);
     if(status===200||status===204){ ok++; const r=ROWS[c.i]; if(r){ r.status='PLANNED'; r.skip=false; r.review=null; } } else fail++; }
   LAST_BOOKING=[]; updateUndo(); render();
   $('commitInfo').textContent=ok+' zurückgenommen'+(fail?(', '+fail+' fehlgeschlagen'):'')+'.'; b.disabled=false; };
-$('resetBtn').onclick=()=>{ ROWS=[]; LAST_BOOKING=[]; updateUndo(); localStorage.removeItem(PLAN_LS);
+$('resetBtn').onclick=()=>{
+  if(ROWS.length && ROWS.some(r=>!r.skip) && !confirm('Aktuellen Plan verwerfen und neue CSV laden?')) return;
+  ROWS=[]; LAST_BOOKING=[]; updateUndo(); localStorage.removeItem(PLAN_LS);
   $('planArea').classList.add('hide'); $('stats').classList.add('hide'); $('dropzone').classList.remove('hide'); fi.value='';
   showBanner(); };
 

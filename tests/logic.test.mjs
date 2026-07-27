@@ -52,9 +52,10 @@ const csv = 'timeline,start date,end date,duration (minutes),name,notes\n'+
   '"K_ADMIN",2026-05-06 10:00:00,2026-05-06 10:30:00,30,"Admin",""\n'+
   '"K_CNC",2026-05-06 11:00:00,2026-05-06 12:00:00,60,"POST",""\n'+
   '"K_CNC",2026-05-06 12:00:00,2026-05-06 12:30:00,30,"3T",""\n'+
-  '"XYZ",2026-05-06 13:00:00,2026-05-06 14:00:00,60,"egal",""\n';
+  '"XYZ",2026-05-06 13:00:00,2026-05-06 14:00:00,60,"egal",""\n'+
+  '"BB_ESA",2026-05-07 09:00:00,2026-05-07 09:01:00,1,"POST",""\n';
 const groups = L.csvGroups(csv);
-ok(Object.keys(groups).length===3, 'csvGroups: 3 Gruppen (K_ADMIN, K_CNC, XYZ)');
+ok(Object.keys(groups).length===4, 'csvGroups: 4 Gruppen (K_ADMIN, K_CNC, XYZ, BB_ESA)');
 const plan = L.buildPlan(groups);
 const admin = plan.find(r=>r.csv_code==='K_ADMIN');
 eq(admin.task, 'Administration', 'K_ADMIN intern → Administration');
@@ -67,6 +68,8 @@ eq(cnc.hours_booked, 1.2, 'K_CNC 1.0h * 1.2 = 1.2 gebucht');
 ok(plan.some(r=>r.csv_code==='3T'), 'Redirect K_CNC "3T" → Projekt 3T');
 const unknown = plan.find(r=>r.csv_code==='XYZ');
 ok(unknown && unknown.adhoc===true && unknown.instance===null, 'Unbekanntes Kürzel → adhoc');
+const tiny = plan.find(r=>r.csv_code==='BB_ESA');
+ok(tiny && tiny.skip===true && /Fehlstart/.test(tiny.review||''), '1-Minuten-Eintrag → auto-abgewählt (Fehlstart)');
 
 console.log(pass+' Tests ok'+(fail?(', '+fail+' FEHLER'):''));
 process.exit(fail?1:0);
