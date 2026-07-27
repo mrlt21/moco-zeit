@@ -493,22 +493,27 @@ function projectOptions(selPid){
   return o;
 }
 window.pickProject=async(i,sel)=>{
-  const v=sel.value; const r=ROWS[i];
-  if(!v){ r.instance=null; r.project_id=null; r.project=null; r.available_tasks=null; r.task=null; r.task_id=null;
-          r.status='NEEDS_REVIEW'; r.review='Unbekanntes Kürzel – Projekt unten wählen.'; r.skip=true; render(); return; }
+  const v=sel.value; const code=ROWS[i].csv_code;
+  // gilt für ALLE noch offenen Zeilen mit demselben Kürzel
+  const targets=ROWS.filter(r=>r.csv_code===code && r.adhoc);
+  if(!v){ targets.forEach(r=>{ r.instance=null; r.project_id=null; r.project=null; r.available_tasks=null;
+      r.task=null; r.task_id=null; r.status='NEEDS_REVIEW'; r.review='Unbekanntes Kürzel – Projekt unten wählen.'; r.skip=true; });
+    render(); return; }
   const [ik,pids]=v.split('|'); const pid=parseInt(pids);
   const p=(ALL_PROJECTS[ik]||[]).find(x=>x.id===pid)||{};
-  r.instance=ik; r.project_id=pid; r.project=p.name; r.identifier=p.identifier||null;
-  r.task=null; r.task_id=null; r.markup_manual=false;
-  r.markup = (ik==='kornflex' && !/admin|intern|ov_admin/i.test(p.name||''));  // Vorschlag, per Schalter änderbar
-  r.status='NEEDS_REVIEW'; r.review='Task wählen.'; r.skip=true;
-  recomputeMoney(r);
   const {status,data}=await moco(ik,'GET','/api/v1/projects/'+pid+'/tasks');
-  r.available_tasks=(status===200&&Array.isArray(data))?data.map(t=>({id:t.id,name:t.name||''})):[];
-  // smarte Vorauswahl aus dem CSV-Namen (z.B. POST -> Post Production); sonst offen lassen
-  const guess=mapTask(instCfg(ik), r.description||'');
-  const m = guess ? matchTask(r.available_tasks, guess) : null;
-  if(m){ r.task_id=m.id; r.task=m.name; r.status='PLANNED'; r.review=null; r.skip=false; recomputeMoney(r); }
+  const tasks=(status===200&&Array.isArray(data))?data.map(t=>({id:t.id,name:t.name||''})):[];
+  const suggestMarkup = (ik==='kornflex' && !/admin|intern|ov_admin/i.test(p.name||''));
+  targets.forEach(r=>{
+    r.instance=ik; r.project_id=pid; r.project=p.name; r.identifier=p.identifier||null;
+    r.available_tasks=tasks; r.markup_manual=false; r.markup=suggestMarkup;
+    r.task=null; r.task_id=null; r.status='NEEDS_REVIEW'; r.review='Task wählen.'; r.skip=true;
+    // Task pro Zeile aus deren eigener Beschreibung vorwählen (z.B. POST -> Post Production)
+    const guess=mapTask(instCfg(ik), r.description||'');
+    const m = guess ? matchTask(tasks, guess) : null;
+    if(m){ r.task_id=m.id; r.task=m.name; r.status='PLANNED'; r.review=null; r.skip=false; }
+    recomputeMoney(r);
+  });
   render();
 };
 window.toggleMk=(i)=>{ const r=ROWS[i]; r.markup=!r.markup; r.markup_manual=true;
