@@ -80,6 +80,7 @@
     border:1px solid #dfe2e7; border-radius:9px; padding:7px 10px; font:inherit; }
   select,input[type=text]{ max-width:185px; }
   td select{ max-width:175px; }
+  .projsearch{ margin-top:4px; width:215px; max-width:215px; }
   select:focus,input:focus,textarea:focus{ outline:none; border-color:var(--green);
     box-shadow:0 0 0 3px rgba(22,163,74,.12); }
   textarea{ width:100%; min-height:150px; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
@@ -373,8 +374,8 @@ async function resolveIds(rows){
     if(same.length){ const tot=round2(same.reduce((s,a)=>s+parseFloat(a.hours||0),0));
       const ts=[...new Set(same.map(a=>(a.task||{}).name||'?'))].join(', ');
       r.existing={count:same.length,hours:tot,tasks:ts};
-      if(r.status==='PLANNED'){ r.status='CHECK_DUPLICATE';
-        r.review='Bereits '+tot+'h auf diesem Projekt am '+r.date+' (Tasks: '+ts+'). Prüfen, ggf. abwählen.'; } }
+      if(r.status==='PLANNED'){ r.status='CHECK_DUPLICATE'; r.skip=true;
+        r.review='Bereits '+tot+'h auf diesem Projekt am '+r.date+' (Tasks: '+ts+'). Mögliche Dublette – standardmäßig abgewählt.'; } }
   });
   return rows;
 }
@@ -488,7 +489,8 @@ function loadFile(file){
 }
 
 function render(){
-  let html='<table><thead><tr><th>Datum</th><th>Projekt</th><th>Task</th><th>Beschrieb</th>'+
+  let html=projectDatalist()+
+    '<table><thead><tr><th>Datum</th><th>Projekt</th><th>Task</th><th>Beschrieb</th>'+
     '<th class="num">Eff h</th><th class="num">Gebucht</th><th>Status</th><th>Buchen</th></tr></thead><tbody>';
   let inst=null;
   ROWS.forEach((r,i)=>{
@@ -499,8 +501,8 @@ function render(){
     const av='<div class="av" style="background:'+avatarColor(nm)+'">'+esc(initials(nm))+'</div>';
     let projCell;
     if(r.adhoc){
-      projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.project||r.csv_code||'—')+'</div>'+
-        '<select onchange="pickProject('+i+',this)" style="margin-top:4px">'+projectOptions(r.project_id)+'</select></div></div>';
+      projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.csv_code||'—')+'</div>'+
+        '<input class="projsearch" list="projlist" value="'+esc(projDisplayFor(r))+'" placeholder="Projekt suchen…" onchange="pickProjectByName('+i+',this.value)"></div></div>';
     } else {
       projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.project||'—')+'</div>'+
         '<div class="cli-sub">'+esc(r.csv_code||'')+'</div></div></div>';
@@ -525,46 +527,53 @@ window.setTask=(i,sel)=>{ const o=sel.options[sel.selectedIndex]; ROWS[i].task_i
   ROWS[i].task=o.value?o.text:null; if(o.value){ ROWS[i].skip=false; ROWS[i].status='PLANNED'; ROWS[i].review=null; recomputeMoney(ROWS[i]); } render(); };
 window.setTaskName=(i,v)=>{ ROWS[i].task=v; ROWS[i].task_id=null; };
 
-function projectOptions(selPid){
-  let o='<option value="">– Projekt wählen –</option>';
-  const tag={breitbild:'Breitbild',kornflex:'Kornflex'};
+let PROJ_INDEX={};  // Anzeige-Text -> {ik,pid}
+function projectDatalist(){  // suchbare Projektliste (Name, P-Code UND Kunde durchsuchbar)
+  PROJ_INDEX={}; const tag={breitbild:'Breitbild',kornflex:'Kornflex'}; let opts='';
   for(const ik of Object.keys(MAPPINGS.instances)){
-    const list=ALL_PROJECTS[ik]||[]; if(!list.length) continue;
-    const byCust={};
-    list.forEach(p=>{ const c=((p.customer||{}).name)||'– ohne Kunde –'; (byCust[c]=byCust[c]||[]).push(p); });
-    Object.keys(byCust).sort((a,b)=>a.localeCompare(b)).forEach(cust=>{
-      o+='<optgroup label="'+esc((tag[ik]||ik)+' · '+cust)+'">';
-      byCust[cust].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(p=>{
-        o+='<option value="'+ik+'|'+p.id+'"'+(p.id===selPid?' selected':'')+'>'+
-           esc(p.name)+(p.identifier?' ('+p.identifier+')':'')+'</option>'; });
-      o+='</optgroup>';
+    (ALL_PROJECTS[ik]||[]).forEach(p=>{
+      const cust=(p.customer||{}).name||'';
+      const base=p.name+(p.identifier?(' ('+p.identifier+')'):'')+(cust?(' — '+cust):'');
+      let v=base, n=2; while(PROJ_INDEX[v]) v=base+' #'+(n++);
+      PROJ_INDEX[v]={ik,pid:p.id};
+      opts+='<option value="'+esc(v)+'">'+tag[ik]+'</option>';
     });
   }
-  return o;
+  return '<datalist id="projlist">'+opts+'</datalist>';
 }
-window.pickProject=async(i,sel)=>{
-  const v=sel.value; const code=ROWS[i].csv_code;
-  // gilt für ALLE noch offenen Zeilen mit demselben Kürzel
-  const targets=ROWS.filter(r=>r.csv_code===code && r.adhoc);
-  if(!v){ targets.forEach(r=>{ r.instance=null; r.project_id=null; r.project=null; r.available_tasks=null;
-      r.task=null; r.task_id=null; r.status='NEEDS_REVIEW'; r.review='Unbekanntes Kürzel – Projekt unten wählen.'; r.skip=true; });
-    render(); return; }
-  const [ik,pids]=v.split('|'); const pid=parseInt(pids);
+function projDisplayFor(r){  // Rückwärts: Anzeige-Text zum aktuell gewählten Projekt
+  if(!r.project_id) return '';
+  for(const k in PROJ_INDEX){ const t=PROJ_INDEX[k]; if(t.ik===r.instance && t.pid===r.project_id) return k; }
+  return r.project||'';
+}
+async function applyProject(i, ik, pid){
+  const r0=ROWS[i];
+  // Erst-Zuweisung eines Kürzels -> auf ALLE noch offenen gleichen anwenden.
+  // Zeile schon zugewiesen -> nur diese ändern (z.B. Blue: erste Gurten, Rest Lumnezia).
+  const targets = r0.project_id ? [r0] : ROWS.filter(r=>r.csv_code===r0.csv_code && r.adhoc && !r.project_id);
   const p=(ALL_PROJECTS[ik]||[]).find(x=>x.id===pid)||{};
   const {status,data}=await moco(ik,'GET','/api/v1/projects/'+pid+'/tasks');
   const tasks=(status===200&&Array.isArray(data))?data.map(t=>({id:t.id,name:t.name||''})):[];
-  const suggestMarkup = (ik==='kornflex' && !/admin|intern|ov_admin/i.test(p.name||''));
+  const suggestMarkup=(ik==='kornflex' && !/admin|intern|ov_admin/i.test(p.name||''));
   targets.forEach(r=>{
     r.instance=ik; r.project_id=pid; r.project=p.name; r.identifier=p.identifier||null;
     r.available_tasks=tasks; r.markup_manual=false; r.markup=suggestMarkup;
     r.task=null; r.task_id=null; r.status='NEEDS_REVIEW'; r.review='Task wählen.'; r.skip=true;
-    // Task pro Zeile aus deren eigener Beschreibung vorwählen (z.B. POST -> Post Production)
     const guess=mapTask(instCfg(ik), r.description||'');
-    const m = guess ? matchTask(tasks, guess) : null;
+    const m=guess?matchTask(tasks,guess):null;
     if(m){ r.task_id=m.id; r.task=m.name; r.status='PLANNED'; r.review=null; r.skip=false; }
     recomputeMoney(r);
   });
   render();
+}
+window.pickProjectByName=(i,val)=>{
+  const v=(val||'').trim(); const r0=ROWS[i];
+  if(!v){ const targets=r0.project_id?[r0]:ROWS.filter(r=>r.csv_code===r0.csv_code&&r.adhoc&&!r.project_id);
+    targets.forEach(r=>{ r.instance=null;r.project_id=null;r.project=null;r.available_tasks=null;r.task=null;r.task_id=null;
+      r.status='NEEDS_REVIEW';r.review='Unbekanntes Kürzel – Projekt suchen.';r.skip=true; });
+    render(); return; }
+  const t=PROJ_INDEX[v]; if(!t){ render(); return; }  // kein gültiges Projekt gewählt
+  applyProject(i, t.ik, t.pid);
 };
 window.toggleMk=(i)=>{ const r=ROWS[i]; r.markup=!r.markup; r.markup_manual=true;
   r.hours_booked=round2(r.hours_effective*(r.markup?1.2:1.0)); render(); };
