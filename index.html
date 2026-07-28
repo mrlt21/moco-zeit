@@ -76,8 +76,10 @@
     margin-left:6px; border:1px solid var(--line); color:var(--muted); font-weight:600;
     user-select:none; vertical-align:middle; }
   .mk.on{ background:var(--greenbg); border-color:transparent; color:var(--green); }
-  select,input[type=text],input[type=password],textarea{ background:#fff; color:var(--txt);
+  select,input[type=text],input[type=password],textarea,.projsearch{ background:#fff; color:var(--txt);
     border:1px solid #dfe2e7; border-radius:9px; padding:7px 10px; font:inherit; }
+  .pedit{ color:#c3c8cf; cursor:pointer; font-size:12px; margin-left:4px; user-select:none; }
+  .pedit:hover{ color:var(--green); }
   select,input[type=text]{ max-width:200px; }
   td select{ max-width:230px; }
   .projsearch{ margin-top:4px; width:215px; max-width:215px; }
@@ -640,11 +642,13 @@ function render(){
     const nm=r.project||r.csv_code;
     const av='<div class="av" style="background:'+avatarColor(nm)+'">'+esc(initials(nm))+'</div>';
     let projCell;
-    if(r.adhoc){
+    if(r.adhoc || r.projEdit){
+      const cancel=r.projEdit?'<button class="btn ghost sm" aria-label="Änderung abbrechen" onclick="ROWS['+i+'].projEdit=false;render()">✕</button>':'';
       projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.csv_code||'—')+'</div>'+
-        '<input class="projsearch" list="projlist" value="'+esc(projDisplayFor(r))+'" placeholder="Projekt suchen…" onchange="pickProjectByName('+i+',this.value)"></div></div>';
+        '<span style="display:flex;gap:6px;align-items:center;margin-top:4px"><input class="projsearch" list="projlist" value="'+esc(projDisplayFor(r))+'" placeholder="Projekt suchen…" onchange="pickProjectByName('+i+',this.value)">'+cancel+'</span></div></div>';
     } else {
-      projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.project||'—')+'</div>'+
+      projCell='<div class="cli">'+av+'<div><div class="cli-name">'+esc(r.project||'—')+
+        ' <span class="pedit" role="button" tabindex="0" title="Projekt ändern" aria-label="Projekt ändern" onclick="editProj('+i+')">✎</span></div>'+
         '<div class="cli-sub">'+esc(r.csv_code||'')+'</div></div></div>';
     }
     let taskCell;
@@ -701,13 +705,15 @@ async function applyProject(i, ik, pid){
   // Erst-Zuweisung eines Kürzels -> auf ALLE noch offenen gleichen anwenden.
   // Zeile schon zugewiesen -> nur diese ändern (z.B. Blue: erste Gurten, Rest Lumnezia).
   const targets = r0.project_id ? [r0] : ROWS.filter(r=>r.csv_code===r0.csv_code && r.adhoc && !r.project_id);
+  const override = !!r0.project_id;                          // nachträgliche Änderung: Aufschlag-Vorschlag gilt manuell
   const p=(ALL_PROJECTS[ik]||[]).find(x=>x.id===pid)||{};
   const {status,data}=await moco(ik,'GET','/api/v1/projects/'+pid+'/tasks');
   const tasks=(status===200&&Array.isArray(data))?data.map(t=>({id:t.id,name:t.name||''})):[];
   const suggestMarkup=(ik==='kornflex' && !/admin|intern|ov_admin/i.test(p.name||''));
   targets.forEach(r=>{
     r.instance=ik; r.project_id=pid; r.project=p.name; r.identifier=p.identifier||null;
-    r.available_tasks=tasks; r.markup_manual=false; r.markup=suggestMarkup;
+    r.available_tasks=tasks; r.markup_manual=override; r.markup=suggestMarkup;
+    r.hours_manual=false; r.projEdit=false;
     r.task=null; r.task_id=null; r.status='NEEDS_REVIEW'; r.review='Task wählen.'; r.skip=true;
     const guess=mapTask(instCfg(ik), r.description||'');
     const m=guess?matchTask(tasks,guess):null;
@@ -718,13 +724,17 @@ async function applyProject(i, ik, pid){
 }
 window.pickProjectByName=(i,val)=>{
   const v=(val||'').trim(); const r0=ROWS[i];
-  if(!v){ const targets=r0.project_id?[r0]:ROWS.filter(r=>r.csv_code===r0.csv_code&&r.adhoc&&!r.project_id);
+  if(!v){
+    if(r0.projEdit && !r0.adhoc){ r0.projEdit=false; render(); return; }  // leeres Feld = Änderung abbrechen
+    const targets=r0.project_id?[r0]:ROWS.filter(r=>r.csv_code===r0.csv_code&&r.adhoc&&!r.project_id);
     targets.forEach(r=>{ r.instance=null;r.project_id=null;r.project=null;r.available_tasks=null;r.task=null;r.task_id=null;
       r.status='NEEDS_REVIEW';r.review='Unbekanntes Kürzel – Projekt suchen.';r.skip=true; });
     render(); return; }
   const t=PROJ_INDEX[v]; if(!t){ render(); return; }  // kein gültiges Projekt gewählt
   applyProject(i, t.ik, t.pid);
 };
+window.editProj=async(i)=>{ ROWS[i].projEdit=true; render();
+  try{ await ensureProjects(); render(); }catch(e){} };
 window.toggleMk=(i)=>{ const r=ROWS[i]; r.markup=!r.markup; r.markup_manual=true; r.hours_manual=false;
   recomputeMoney(r); render(); };
 window.setHours=(i,v)=>{ const r=ROWS[i]; const x=parseFloat(String(v).replace(',','.'));
