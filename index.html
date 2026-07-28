@@ -134,6 +134,16 @@
   .maplist th{ text-align:left; font-size:10.5px; color:var(--muted); font-weight:600; padding:5px 8px;
     border-bottom:1px solid var(--line); }
   .maplist td{ padding:5px 8px; border-bottom:1px solid #f4f5f7; }
+  /* Responsive: mittlere Breiten kompakter, damit rechts nichts abgeschnitten wird */
+  @media(max-width:1250px){
+    th,td{ padding:9px 8px; }
+    td select{ max-width:165px; }
+    .desc{ width:115px; max-width:115px; }
+    .projsearch{ width:170px; max-width:170px; }
+    .cli{ max-width:180px; gap:7px; }
+    .review{ max-width:165px; }
+    .hrs{ width:68px; max-width:68px; padding:5px 6px; }
+  }
   /* Responsive: unter 700px wird die Tabelle zu Tages-Karten */
   @media(max-width:760px){ .stats{ grid-template-columns:repeat(2,1fr); } }
   @media(max-width:700px){
@@ -624,6 +634,8 @@ function loadFile(file){
 }
 
 function render(){
+  // nach (neu-)Zuweisung sauber in die Instanz-Gruppen einsortieren
+  ROWS.sort((a,b)=>(a.instance||'zzz').localeCompare(b.instance||'zzz')||a.date.localeCompare(b.date)||(a.csv_code||'').localeCompare(b.csv_code||''));
   const instSum={};
   ROWS.filter(r=>!r.skip).forEach(r=>{ const k=r.instance||'?'; instSum[k]=(instSum[k]||0)+r.hours_booked; });
   let html=projectDatalist()+
@@ -656,7 +668,7 @@ function render(){
       taskCell='<select onchange="setTask('+i+',this)"><option value="">– wählen –</option>'+
         r.available_tasks.map(t=>'<option value="'+t.id+'"'+(t.id===r.task_id?' selected':'')+'>'+esc(t.name)+'</option>').join('')+'</select>';
     } else taskCell='<input type="text" value="'+esc(r.task||'')+'" onchange="setTaskName('+i+',this.value)">';
-    const merken = (r.adhoc&&r.project_id&&r.task_id)
+    const merken = ((r.adhoc||r.wasAdhoc)&&r.project_id&&r.task_id)
       ? ' <button class="btn ghost sm" onclick="mergeMapping('+i+')">Kürzel merken</button>' : '';
     html+='<tr'+(r.skip?' class="rowoff"':'')+'>'+
       '<td data-l="Datum">'+fmtDate(r.date)+'</td><td>'+projCell+'</td>'+
@@ -714,6 +726,7 @@ async function applyProject(i, ik, pid){
     r.instance=ik; r.project_id=pid; r.project=p.name; r.identifier=p.identifier||null;
     r.available_tasks=tasks; r.markup_manual=override; r.markup=suggestMarkup;
     r.hours_manual=false; r.projEdit=false;
+    if(r.adhoc){ r.adhoc=false; r.wasAdhoc=true; }   // ab jetzt kompakt anzeigen (Name + ✎)
     r.task=null; r.task_id=null; r.status='NEEDS_REVIEW'; r.review='Task wählen.'; r.skip=true;
     const guess=mapTask(instCfg(ik), r.description||'');
     const m=guess?matchTask(tasks,guess):null;
@@ -748,7 +761,9 @@ window.bookDiff=(i)=>{ const r=ROWS[i]; if(!r.existing) return;
   render(); };
 window.mergeMapping=(i)=>{ const r=ROWS[i]; if(!r.instance||!r.project_id) return;
   MAPPINGS.instances[r.instance].projects[r.csv_code]={project_id:r.project_id,name:r.project,markup:!!r.markup};
-  localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS)); r.adhoc=false; render();
+  localStorage.setItem(LS.cfg,JSON.stringify(MAPPINGS));
+  ROWS.forEach(x=>{ if(x.csv_code===r.csv_code){ x.adhoc=false; x.wasAdhoc=false; } });
+  render(); renderMapList();
   toast('„'+r.csv_code+'" gemerkt · für andere Geräte das Lesezeichen neu erzeugen'); };
 window.summarize=summarize;
 function summarize(){
